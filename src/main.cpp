@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <cstdio>
+#include <vector>
 
 struct Mat4 { float m[16]; };
 static Mat4 matId(){ Mat4 r; memset(r.m,0,sizeof(r.m)); r.m[0]=r.m[5]=r.m[10]=r.m[15]=1; return r; }
@@ -85,6 +86,8 @@ static const unsigned short IDX[] = {
 };
 
 static GLuint gProg,gVBO,gIBO;
+static GLuint gSphereVBO=0, gSphereIBO=0;
+static int gSphereIndexCount=0;
 static GLint aPos,aNormal,uMVP,uModel,uColor;
 static Mat4 gVP;
 static double gLast=0, gT=0;
@@ -109,23 +112,17 @@ static PetColors gPets[6] = {
     {{0.50f,0.95f,1.00f},{0.10f,0.60f,0.85f},{0.05f,0.05f,0.09f}}
 };
 static int gPetIdx = 1;
-
-// 0 = character is active subject, 1 = pet is active subject
 static int gActiveSubject = 0;
 
 extern "C" EMSCRIPTEN_KEEPALIVE
 void set_character_preset(int idx){ if(idx<0)idx=0; if(idx>4)idx=4; gPaletteIdx=idx; }
-
 extern "C" EMSCRIPTEN_KEEPALIVE
 void set_pet_preset(int idx){ if(idx<0)idx=0; if(idx>5)idx=5; gPetIdx=idx; }
-
 extern "C" EMSCRIPTEN_KEEPALIVE
 void set_active_subject(int s){ gActiveSubject = (s==1) ? 1 : 0; }
 
-// Independent yaw for character and pet
 static float gCharYaw = 0.0f;
 static float gPetYaw  = 0.0f;
-
 static bool   gDragging = false;
 static double gLastX = 0.0;
 
@@ -140,7 +137,7 @@ static EM_BOOL on_mouse_move(int, const EmscriptenMouseEvent* e, void*){
     gLastX = e->clientX;
     float delta = -(float)dx * 0.010f;
     if (gActiveSubject == 0) gCharYaw += delta;
-    else                     gPetYaw += delta * 0.5f;
+    else                     gPetYaw  += delta;
     return EM_TRUE;
 }
 static EM_BOOL on_touch_start(int, const EmscriptenTouchEvent* e, void*){
@@ -154,7 +151,7 @@ static EM_BOOL on_touch_move(int, const EmscriptenTouchEvent* e, void*){
     gLastX = e->touches[0].clientX;
     float delta = -(float)dx * 0.012f;
     if (gActiveSubject == 0) gCharYaw += delta;
-    else                     gPetYaw += delta * 0.5f;
+    else                     gPetYaw  += delta;
     return EM_TRUE;
 }
 
@@ -166,60 +163,473 @@ static GLuint sh(GLenum t,const char*src){
     if(!ok){ char log[1024]; glGetShaderInfoLog(s,1024,nullptr,log); printf("Shader: %s\n",log); }
     return s;
 }
+
+static void setCubeAttribs(){
+    glBindBuffer(GL_ARRAY_BUFFER, gVBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gIBO);
+    glEnableVertexAttribArray(aPos);
+    glVertexAttribPointer(aPos, 3, GL_FLOAT, GL_FALSE, 6*sizeof(float), (void*)0);
+    glEnableVertexAttribArray(aNormal);
+    glVertexAttribPointer(aNormal, 3, GL_FLOAT, GL_FALSE, 6*sizeof(float), (void*)(3*sizeof(float)));
+}
+static void setSphereAttribs(){
+    glBindBuffer(GL_ARRAY_BUFFER, gSphereVBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gSphereIBO);
+    glEnableVertexAttribArray(aPos);
+    glVertexAttribPointer(aPos, 3, GL_FLOAT, GL_FALSE, 6*sizeof(float), (void*)0);
+    glEnableVertexAttribArray(aNormal);
+    glVertexAttribPointer(aNormal, 3, GL_FLOAT, GL_FALSE, 6*sizeof(float), (void*)(3*sizeof(float)));
+}
+
 static void drawBox(const Mat4&m,const float c[3]){
     Mat4 mvp=matMul(gVP,m);
     glUniformMatrix4fv(uModel,1,GL_FALSE,m.m);
     glUniformMatrix4fv(uMVP,1,GL_FALSE,mvp.m);
     glUniform3f(uColor,c[0],c[1],c[2]);
+    setCubeAttribs();
     glDrawElements(GL_TRIANGLES,36,GL_UNSIGNED_SHORT,0);
+}
+static void drawSphere(const Mat4&m,const float c[3]){
+    Mat4 mvp=matMul(gVP,m);
+    glUniformMatrix4fv(uModel,1,GL_FALSE,m.m);
+    glUniformMatrix4fv(uMVP,1,GL_FALSE,mvp.m);
+    glUniform3f(uColor,c[0],c[1],c[2]);
+    setSphereAttribs();
+    glDrawElements(GL_TRIANGLES,gSphereIndexCount,GL_UNSIGNED_SHORT,0);
 }
 static void drawBoxRGB(const Mat4&m,float r,float g,float b){
     float c[3]={r,g,b};
     drawBox(m,c);
 }
 
+// Convenient shortcuts
+static void XBOX(const Mat4& parent, float tx, float ty, float tz,
+                 float sx, float sy, float sz, const float* c){
+    drawBox(matMul(parent, matMul(matT(tx,ty,tz), matS(sx,sy,sz))), c);
+}
+static void XSPH(const Mat4& parent, float tx, float ty, float tz,
+                 float sx, float sy, float sz, const float* c){
+    drawSphere(matMul(parent, matMul(matT(tx,ty,tz), matS(sx,sy,sz))), c);
+}
+
+static void buildSphere(){
+    const int RINGS = 12;
+    const int SEGMENTS = 16;
+    std::vector<float> verts;
+    std::vector<unsigned short> idx;
+    verts.reserve((RINGS+1)*(SEGMENTS+1)*6);
+    idx.reserve(RINGS*SEGMENTS*6);
+    for (int y=0; y<=RINGS; y++){
+        float v = (float)y / RINGS;
+        float phi = v * 3.14159265f;
+        float sp = sinf(phi);
+        float cp = cosf(phi);
+        for (int x=0; x<=SEGMENTS; x++){
+            float u = (float)x / SEGMENTS;
+            float theta = u * 2.0f * 3.14159265f;
+            float nx = sp * cosf(theta);
+            float ny = cp;
+            float nz = sp * sinf(theta);
+            verts.push_back(nx*0.5f); verts.push_back(ny*0.5f); verts.push_back(nz*0.5f);
+            verts.push_back(nx); verts.push_back(ny); verts.push_back(nz);
+        }
+    }
+    for (int y=0; y<RINGS; y++){
+        for (int x=0; x<SEGMENTS; x++){
+            unsigned short a = (unsigned short)(y*(SEGMENTS+1)+x);
+            unsigned short b = (unsigned short)(a+SEGMENTS+1);
+            idx.push_back(a);   idx.push_back(b);   idx.push_back(a+1);
+            idx.push_back(a+1); idx.push_back(b);   idx.push_back(b+1);
+        }
+    }
+    gSphereIndexCount = (int)idx.size();
+    glGenBuffers(1,&gSphereVBO);
+    glBindBuffer(GL_ARRAY_BUFFER,gSphereVBO);
+    glBufferData(GL_ARRAY_BUFFER, verts.size()*sizeof(float), verts.data(), GL_STATIC_DRAW);
+    glGenBuffers(1,&gSphereIBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,gSphereIBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size()*sizeof(unsigned short), idx.data(), GL_STATIC_DRAW);
+}
+
+// ==== shared colors ====
+static const float SKIN[3]      = {1.00f, 0.82f, 0.62f};
+static const float SKIN_DK[3]   = {0.88f, 0.70f, 0.50f};
+static const float EYE_W[3]     = {0.95f, 0.96f, 0.98f};
+static const float EYE_D[3]     = {0.05f, 0.05f, 0.09f};
+static const float BOOT_C[3]    = {0.05f, 0.06f, 0.08f};
+static const float METAL_C[3]   = {0.16f, 0.20f, 0.26f};
+static const float GLOW[3]      = {0.05f, 0.85f, 1.00f};
+
+// ================================================================
+//  CHARACTER 1 — ALPHA (blue soldier, basic)
+// ================================================================
+static void drawAlpha(const Mat4& root, Palette& P, float breathe, float sway){
+    for (int side = -1; side <= 1; side += 2){
+        float sx = side * 0.16f;
+        XSPH(root, sx, 0.62f, 0.0f, 0.24f, 0.40f, 0.24f, P.legs);
+        XSPH(root, sx, 0.38f, 0.02f, 0.22f, 0.14f, 0.22f, P.chest);
+        XSPH(root, sx, 0.22f, 0.0f, 0.21f, 0.30f, 0.21f, P.legs);
+        XBOX(root, sx, 0.08f, 0.02f, 0.22f, 0.14f, 0.26f, BOOT_C);
+        XBOX(root, sx, 0.02f, 0.02f, 0.24f, 0.04f, 0.28f, METAL_C);
+        XSPH(root, sx, 0.06f, 0.15f, 0.20f, 0.12f, 0.12f, BOOT_C);
+    }
+    XSPH(root, 0.0f, 0.92f, 0.0f, 0.62f, 0.24f, 0.36f, P.torso);
+    XBOX(root, 0.0f, 0.94f, 0.0f, 0.62f, 0.08f, 0.36f, P.belt);
+    XBOX(root, 0.0f, 0.94f, 0.20f, 0.14f, 0.10f, 0.06f, P.chest);
+    XSPH(root, 0.0f, 1.14f, 0.0f, 0.58f, 0.28f, 0.34f, P.torso);
+    XSPH(root, 0.0f, 1.40f + breathe*0.5f, 0.0f, 0.64f, 0.38f, 0.36f, P.torso);
+    XSPH(root, 0.0f, 1.42f + breathe*0.5f, 0.16f, 0.48f, 0.30f, 0.12f, P.chest);
+    XBOX(root, 0.0f, 1.42f + breathe*0.5f, 0.24f, 0.44f, 0.035f, 0.02f, GLOW);
+    XSPH(root, -0.22f, 1.38f + breathe*0.5f, 0.0f, 0.10f, 0.52f, 0.36f, P.chest);
+    XSPH(root,  0.22f, 1.38f + breathe*0.5f, 0.0f, 0.10f, 0.52f, 0.36f, P.chest);
+    XSPH(root, 0.0f, 1.60f + breathe*0.5f, 0.0f, 0.30f, 0.12f, 0.32f, P.helmet);
+    XSPH(root, 0.0f, 1.70f + breathe*0.5f, 0.0f, 0.20f, 0.16f, 0.20f, SKIN_DK);
+    float hy = 1.92f + breathe;
+    XSPH(root, 0.0f, hy, 0.0f, 0.46f, 0.48f, 0.46f, SKIN);
+    XSPH(root, -0.22f, hy, 0.0f, 0.06f, 0.12f, 0.10f, SKIN);
+    XSPH(root,  0.22f, hy, 0.0f, 0.06f, 0.12f, 0.10f, SKIN);
+    XSPH(root, 0.0f, hy - 0.04f, 0.24f, 0.07f, 0.09f, 0.09f, SKIN_DK);
+    XBOX(root, 0.0f, hy - 0.12f, 0.22f, 0.10f, 0.025f, 0.04f, EYE_D);
+    XBOX(root, -0.10f, hy + 0.09f, 0.235f, 0.09f, 0.025f, 0.03f, EYE_D);
+    XBOX(root,  0.10f, hy + 0.09f, 0.235f, 0.09f, 0.025f, 0.03f, EYE_D);
+    XSPH(root, -0.10f, hy, 0.21f, 0.10f, 0.10f, 0.06f, EYE_W);
+    XSPH(root,  0.10f, hy, 0.21f, 0.10f, 0.10f, 0.06f, EYE_W);
+    XSPH(root, -0.10f, hy, 0.245f, 0.05f, 0.05f, 0.04f, EYE_D);
+    XSPH(root,  0.10f, hy, 0.245f, 0.05f, 0.05f, 0.04f, EYE_D);
+    XSPH(root, -0.24f, 1.96f + breathe, 0.0f, 0.08f, 0.24f, 0.44f, P.helmet);
+    XSPH(root,  0.24f, 1.96f + breathe, 0.0f, 0.08f, 0.24f, 0.44f, P.helmet);
+    XSPH(root, 0.0f, 1.96f + breathe, -0.20f, 0.48f, 0.28f, 0.14f, P.helmet);
+    XBOX(root, 0.0f, 2.08f + breathe, 0.0f, 0.50f, 0.10f, 0.50f, P.helmet);
+    XSPH(root, 0.0f, 2.16f + breathe, 0.0f, 0.52f, 0.22f, 0.52f, P.helmet);
+    XBOX(root, 0.0f, 2.26f + breathe, -0.04f, 0.05f, 0.08f, 0.26f, P.chest);
+    XBOX(root, 0.0f, 1.99f + breathe, 0.26f, 0.42f, 0.06f, 0.05f, GLOW);
+    for (int side = -1; side <= 1; side += 2){
+        float rot = side * (0.12f + sway);
+        Mat4 ab = matMul(root, matT(side * 0.46f, 1.48f + breathe*0.5f, 0));
+        Mat4 arm = matMul(ab, matRZ(rot));
+        XSPH(ab, 0.0f, 0.02f, 0.0f, 0.34f, 0.26f, 0.36f, P.chest);
+        XSPH(arm, 0.0f, -0.24f, 0.0f, 0.18f, 0.34f, 0.18f, P.torso);
+        XSPH(arm, 0.0f, -0.44f, 0.02f, 0.16f, 0.12f, 0.18f, P.chest);
+        XSPH(arm, 0.0f, -0.58f, 0.0f, 0.15f, 0.26f, 0.15f, SKIN);
+        XBOX(arm, 0.0f, -0.72f, 0.0f, 0.16f, 0.04f, 0.16f, P.belt);
+        XSPH(arm, 0.0f, -0.82f, 0.0f, 0.15f, 0.16f, 0.15f, SKIN);
+        for (int f = 0; f < 4; f++){
+            float fz = -0.055f + f * 0.037f;
+            XBOX(arm, 0.0f, -0.92f, fz, 0.026f, 0.075f, 0.026f, SKIN);
+            XSPH(arm, 0.0f, -0.97f, fz, 0.028f, 0.028f, 0.028f, SKIN);
+        }
+        XBOX(arm, -side * 0.09f, -0.82f, 0.02f, 0.045f, 0.055f, 0.045f, SKIN);
+        XSPH(arm, -side * 0.11f, -0.87f, 0.02f, 0.045f, 0.045f, 0.045f, SKIN);
+    }
+}
+
+// ================================================================
+//  CHARACTER 2 — NOVA (female hero with long ponytail)
+// ================================================================
+static void drawNova(const Mat4& root, Palette& P, float breathe, float sway){
+    float HAIR[3] = {0.55f, 0.12f, 0.32f};
+    for (int side = -1; side <= 1; side += 2){
+        float sx = side * 0.15f;
+        XSPH(root, sx, 0.62f, 0.0f, 0.21f, 0.40f, 0.21f, P.legs);
+        XSPH(root, sx, 0.38f, 0.02f, 0.19f, 0.14f, 0.19f, P.chest);
+        XSPH(root, sx, 0.22f, 0.0f, 0.18f, 0.30f, 0.18f, P.legs);
+        XBOX(root, sx, 0.08f, 0.02f, 0.20f, 0.14f, 0.24f, BOOT_C);
+        XBOX(root, sx, 0.02f, 0.02f, 0.22f, 0.04f, 0.26f, METAL_C);
+        XSPH(root, sx, 0.06f, 0.14f, 0.18f, 0.11f, 0.11f, BOOT_C);
+    }
+    XSPH(root, 0.0f, 0.92f, 0.0f, 0.58f, 0.26f, 0.34f, P.torso);
+    XBOX(root, 0.0f, 0.94f, 0.0f, 0.56f, 0.08f, 0.34f, P.belt);
+    XBOX(root, 0.0f, 0.94f, 0.18f, 0.12f, 0.10f, 0.06f, P.chest);
+    XBOX(root, -0.28f, 0.88f, 0.0f, 0.08f, 0.12f, 0.14f, P.belt);
+    XBOX(root,  0.28f, 0.88f, 0.0f, 0.08f, 0.12f, 0.14f, P.belt);
+    XSPH(root, 0.0f, 1.14f, 0.0f, 0.52f, 0.28f, 0.32f, P.torso);
+    XSPH(root, 0.0f, 1.40f + breathe*0.5f, 0.0f, 0.58f, 0.36f, 0.34f, P.torso);
+    XSPH(root, 0.0f, 1.42f + breathe*0.5f, 0.16f, 0.44f, 0.28f, 0.12f, P.chest);
+    XBOX(root, 0.0f, 1.42f + breathe*0.5f, 0.24f, 0.40f, 0.035f, 0.02f, GLOW);
+    XSPH(root, -0.20f, 1.38f + breathe*0.5f, 0.0f, 0.08f, 0.50f, 0.34f, P.chest);
+    XSPH(root,  0.20f, 1.38f + breathe*0.5f, 0.0f, 0.08f, 0.50f, 0.34f, P.chest);
+    XSPH(root, 0.0f, 1.60f + breathe*0.5f, 0.0f, 0.26f, 0.10f, 0.28f, P.helmet);
+    XSPH(root, 0.0f, 1.70f + breathe*0.5f, 0.0f, 0.16f, 0.14f, 0.16f, SKIN_DK);
+    float hy = 1.92f + breathe;
+    XSPH(root, 0.0f, hy, 0.0f, 0.44f, 0.46f, 0.44f, SKIN);
+    XSPH(root, -0.21f, hy, 0.0f, 0.05f, 0.11f, 0.09f, SKIN);
+    XSPH(root,  0.21f, hy, 0.0f, 0.05f, 0.11f, 0.09f, SKIN);
+    XSPH(root, 0.0f, hy - 0.04f, 0.23f, 0.06f, 0.08f, 0.08f, SKIN_DK);
+    XBOX(root, 0.0f, hy - 0.12f, 0.21f, 0.09f, 0.025f, 0.04f, EYE_D);
+    XBOX(root, -0.10f, hy + 0.09f, 0.225f, 0.09f, 0.025f, 0.03f, EYE_D);
+    XBOX(root,  0.10f, hy + 0.09f, 0.225f, 0.09f, 0.025f, 0.03f, EYE_D);
+    XSPH(root, -0.10f, hy, 0.20f, 0.09f, 0.09f, 0.06f, EYE_W);
+    XSPH(root,  0.10f, hy, 0.20f, 0.09f, 0.09f, 0.06f, EYE_W);
+    XSPH(root, -0.10f, hy, 0.235f, 0.045f, 0.045f, 0.04f, EYE_D);
+    XSPH(root,  0.10f, hy, 0.235f, 0.045f, 0.045f, 0.04f, EYE_D);
+    // LONG HAIR — thick behind head + ponytail going down back
+    XSPH(root, 0.0f, hy + 0.04f, -0.20f, 0.46f, 0.46f, 0.22f, HAIR);
+    XSPH(root, 0.0f, hy - 0.24f, -0.24f, 0.24f, 0.36f, 0.18f, HAIR);
+    XSPH(root, 0.0f, hy - 0.60f, -0.22f, 0.18f, 0.32f, 0.14f, HAIR);
+    XSPH(root, 0.0f, hy - 0.94f, -0.20f, 0.12f, 0.24f, 0.10f, HAIR);
+    // slim crown helmet with V-visor
+    XSPH(root, -0.22f, 2.02f + breathe, -0.04f, 0.06f, 0.18f, 0.38f, P.helmet);
+    XSPH(root,  0.22f, 2.02f + breathe, -0.04f, 0.06f, 0.18f, 0.38f, P.helmet);
+    XSPH(root, 0.0f, 2.14f + breathe, 0.0f, 0.48f, 0.16f, 0.46f, P.helmet);
+    XSPH(root, 0.0f, 2.22f + breathe, 0.0f, 0.30f, 0.14f, 0.32f, P.helmet);
+    // side crown spikes
+    XSPH(root, -0.28f, 2.20f + breathe, 0.0f, 0.05f, 0.14f, 0.05f, P.chest);
+    XSPH(root,  0.28f, 2.20f + breathe, 0.0f, 0.05f, 0.14f, 0.05f, P.chest);
+    // V visor
+    XBOX(root, -0.12f, 1.98f + breathe, 0.24f, 0.30f, 0.06f, 0.04f, GLOW);
+    XBOX(root,  0.12f, 1.98f + breathe, 0.24f, 0.30f, 0.06f, 0.04f, GLOW);
+    for (int side = -1; side <= 1; side += 2){
+        float rot = side * (0.12f + sway);
+        Mat4 ab = matMul(root, matT(side * 0.44f, 1.48f + breathe*0.5f, 0));
+        Mat4 arm = matMul(ab, matRZ(rot));
+        XSPH(ab, 0.0f, 0.02f, 0.0f, 0.28f, 0.22f, 0.30f, P.chest);
+        XSPH(arm, 0.0f, -0.24f, 0.0f, 0.15f, 0.34f, 0.15f, P.torso);
+        XSPH(arm, 0.0f, -0.44f, 0.02f, 0.13f, 0.11f, 0.15f, P.chest);
+        XSPH(arm, 0.0f, -0.58f, 0.0f, 0.12f, 0.26f, 0.12f, SKIN);
+        XBOX(arm, 0.0f, -0.72f, 0.0f, 0.13f, 0.04f, 0.13f, P.belt);
+        XSPH(arm, 0.0f, -0.82f, 0.0f, 0.13f, 0.14f, 0.13f, SKIN);
+        for (int f = 0; f < 4; f++){
+            float fz = -0.05f + f * 0.034f;
+            XBOX(arm, 0.0f, -0.90f, fz, 0.022f, 0.065f, 0.022f, SKIN);
+            XSPH(arm, 0.0f, -0.94f, fz, 0.024f, 0.024f, 0.024f, SKIN);
+        }
+        XBOX(arm, -side * 0.08f, -0.82f, 0.02f, 0.04f, 0.05f, 0.04f, SKIN);
+        XSPH(arm, -side * 0.10f, -0.86f, 0.02f, 0.04f, 0.04f, 0.04f, SKIN);
+    }
+}
+
+// ================================================================
+//  CHARACTER 3 — GHOST (hooded with cape, glowing eyes)
+// ================================================================
+static void drawGhost(const Mat4& root, Palette& P, float breathe, float sway){
+    for (int side = -1; side <= 1; side += 2){
+        float sx = side * 0.15f;
+        XSPH(root, sx, 0.62f, 0.0f, 0.22f, 0.40f, 0.22f, P.torso);
+        XSPH(root, sx, 0.38f, 0.02f, 0.20f, 0.14f, 0.20f, P.helmet);
+        XSPH(root, sx, 0.22f, 0.0f, 0.19f, 0.30f, 0.19f, P.torso);
+        XBOX(root, sx, 0.08f, 0.02f, 0.22f, 0.14f, 0.26f, BOOT_C);
+        XBOX(root, sx, 0.02f, 0.02f, 0.24f, 0.04f, 0.28f, METAL_C);
+    }
+    XSPH(root, 0.0f, 0.92f, 0.0f, 0.58f, 0.26f, 0.34f, P.torso);
+    XBOX(root, 0.0f, 0.94f, 0.0f, 0.58f, 0.06f, 0.34f, P.belt);
+    XSPH(root, 0.0f, 1.20f, 0.0f, 0.56f, 0.36f, 0.34f, P.torso);
+    XSPH(root, 0.0f, 1.50f + breathe*0.5f, 0.0f, 0.58f, 0.36f, 0.34f, P.torso);
+    XSPH(root, 0.0f, 1.55f + breathe*0.5f, 0.16f, 0.42f, 0.24f, 0.10f, P.chest);
+    XBOX(root, 0.0f, 1.50f + breathe*0.5f, 0.22f, 0.38f, 0.03f, 0.02f, GLOW);
+
+    // CAPE — long flowing behind
+    Mat4 capeBase = matMul(root, matT(0.0f, 1.50f, -0.16f));
+    float cs = sway * 3.0f;
+    XSPH(capeBase, 0.0f,  0.00f, 0.0f, 0.62f, 0.50f, 0.10f, P.helmet);
+    XSPH(capeBase, cs*0.05f, -0.42f, 0.0f, 0.58f, 0.44f, 0.09f, P.helmet);
+    XSPH(capeBase, cs*0.10f, -0.82f, 0.0f, 0.54f, 0.40f, 0.08f, P.helmet);
+    XSPH(capeBase, cs*0.15f, -1.16f, 0.0f, 0.48f, 0.32f, 0.06f, P.helmet);
+
+    // HOOD — big rounded shape covering face
+    float hy = 1.94f + breathe;
+    XSPH(root, 0.0f, hy, 0.0f, 0.40f, 0.42f, 0.40f, P.torso);
+    XSPH(root, 0.0f, hy + 0.02f, 0.02f, 0.50f, 0.52f, 0.50f, P.helmet);
+    XSPH(root, 0.0f, hy + 0.10f, 0.16f, 0.52f, 0.24f, 0.28f, P.helmet);
+    XSPH(root, 0.0f, hy + 0.12f, -0.18f, 0.42f, 0.28f, 0.20f, P.helmet);
+    // glowing eye slit
+    XSPH(root, -0.11f, hy - 0.02f, 0.22f, 0.05f, 0.05f, 0.04f, GLOW);
+    XSPH(root,  0.11f, hy - 0.02f, 0.22f, 0.05f, 0.05f, 0.04f, GLOW);
+
+    for (int side = -1; side <= 1; side += 2){
+        float rot = side * (0.10f + sway);
+        Mat4 ab = matMul(root, matT(side * 0.42f, 1.55f + breathe*0.5f, 0));
+        Mat4 arm = matMul(ab, matRZ(rot));
+        XSPH(ab, 0.0f, 0.0f, 0.0f, 0.30f, 0.24f, 0.32f, P.chest);
+        XSPH(arm, 0.0f, -0.24f, 0.0f, 0.14f, 0.32f, 0.14f, P.torso);
+        XSPH(arm, 0.0f, -0.44f, 0.0f, 0.13f, 0.11f, 0.14f, P.helmet);
+        XSPH(arm, 0.0f, -0.60f, 0.0f, 0.13f, 0.26f, 0.13f, P.torso);
+        XSPH(arm, 0.0f, -0.80f, 0.0f, 0.14f, 0.14f, 0.14f, P.helmet);
+        for (int f = 0; f < 4; f++){
+            float fz = -0.05f + f * 0.034f;
+            XBOX(arm, 0.0f, -0.90f, fz, 0.022f, 0.06f, 0.022f, P.helmet);
+        }
+    }
+}
+
+// ================================================================
+//  CHARACTER 4 — BLAZE (bulky fire warrior with horns)
+// ================================================================
+static void drawBlaze(const Mat4& root, Palette& P, float breathe, float sway){
+    // thick legs
+    for (int side = -1; side <= 1; side += 2){
+        float sx = side * 0.18f;
+        XSPH(root, sx, 0.60f, 0.0f, 0.28f, 0.42f, 0.28f, P.legs);
+        XSPH(root, sx, 0.36f, 0.02f, 0.26f, 0.16f, 0.26f, P.chest);
+        XSPH(root, sx, 0.20f, 0.0f, 0.26f, 0.32f, 0.26f, P.legs);
+        XBOX(root, sx, 0.08f, 0.03f, 0.30f, 0.18f, 0.34f, BOOT_C);
+        XBOX(root, sx, 0.00f, 0.03f, 0.32f, 0.04f, 0.36f, METAL_C);
+        XSPH(root, sx, 0.08f, 0.20f, 0.24f, 0.16f, 0.14f, BOOT_C);
+    }
+    // bulk torso
+    XSPH(root, 0.0f, 0.94f, 0.0f, 0.70f, 0.28f, 0.42f, P.torso);
+    XBOX(root, 0.0f, 0.92f, 0.0f, 0.72f, 0.10f, 0.44f, P.belt);
+    XBOX(root, 0.0f, 0.92f, 0.24f, 0.18f, 0.12f, 0.06f, P.chest);
+    XSPH(root, 0.0f, 1.18f, 0.0f, 0.68f, 0.34f, 0.42f, P.torso);
+    XSPH(root, 0.0f, 1.48f + breathe*0.5f, 0.0f, 0.76f, 0.44f, 0.46f, P.torso);
+    XSPH(root, 0.0f, 1.52f + breathe*0.5f, 0.20f, 0.60f, 0.36f, 0.14f, P.chest);
+    XSPH(root, 0.0f, 1.62f + breathe*0.5f, 0.18f, 0.44f, 0.18f, 0.10f, P.belt);
+    XBOX(root, 0.0f, 1.50f + breathe*0.5f, 0.30f, 0.52f, 0.04f, 0.02f, GLOW);
+    XSPH(root, -0.28f, 1.48f + breathe*0.5f, 0.0f, 0.14f, 0.58f, 0.46f, P.chest);
+    XSPH(root,  0.28f, 1.48f + breathe*0.5f, 0.0f, 0.14f, 0.58f, 0.46f, P.chest);
+    XSPH(root, 0.0f, 1.72f + breathe*0.5f, 0.0f, 0.36f, 0.14f, 0.38f, P.helmet);
+    XSPH(root, 0.0f, 1.80f + breathe*0.5f, 0.0f, 0.24f, 0.14f, 0.24f, SKIN_DK);
+    float hy = 2.00f + breathe;
+    XSPH(root, 0.0f, hy, 0.0f, 0.48f, 0.48f, 0.48f, SKIN);
+    XSPH(root, -0.23f, hy, 0.0f, 0.08f, 0.14f, 0.12f, SKIN);
+    XSPH(root,  0.23f, hy, 0.0f, 0.08f, 0.14f, 0.12f, SKIN);
+    XSPH(root, 0.0f, hy - 0.04f, 0.26f, 0.08f, 0.10f, 0.10f, SKIN_DK);
+    XBOX(root, 0.0f, hy - 0.13f, 0.24f, 0.12f, 0.03f, 0.05f, EYE_D);
+    XBOX(root, -0.11f, hy + 0.08f, 0.255f, 0.10f, 0.03f, 0.03f, EYE_D);
+    XBOX(root,  0.11f, hy + 0.08f, 0.255f, 0.10f, 0.03f, 0.03f, EYE_D);
+    float fireEye[3] = {1.00f, 0.45f, 0.10f};
+    XSPH(root, -0.11f, hy, 0.23f, 0.09f, 0.09f, 0.05f, fireEye);
+    XSPH(root,  0.11f, hy, 0.23f, 0.09f, 0.09f, 0.05f, fireEye);
+    XSPH(root, -0.11f, hy, 0.255f, 0.04f, 0.04f, 0.03f, EYE_D);
+    XSPH(root,  0.11f, hy, 0.255f, 0.04f, 0.04f, 0.03f, EYE_D);
+    // horned helmet
+    XBOX(root, 0.0f, hy + 0.16f, 0.0f, 0.54f, 0.14f, 0.54f, P.helmet);
+    XSPH(root, 0.0f, hy + 0.26f, 0.0f, 0.52f, 0.20f, 0.52f, P.helmet);
+    XBOX(root, 0.0f, hy + 0.38f, -0.02f, 0.08f, 0.16f, 0.36f, P.chest);
+    // big front crest
+    XSPH(root, -0.26f, hy + 0.28f, -0.04f, 0.10f, 0.14f, 0.14f, P.helmet);
+    XSPH(root, -0.36f, hy + 0.34f, -0.06f, 0.08f, 0.16f, 0.12f, P.helmet);
+    XSPH(root, -0.44f, hy + 0.42f, -0.08f, 0.05f, 0.12f, 0.06f, P.chest);
+    XSPH(root,  0.26f, hy + 0.28f, -0.04f, 0.10f, 0.14f, 0.14f, P.helmet);
+    XSPH(root,  0.36f, hy + 0.34f, -0.06f, 0.08f, 0.16f, 0.12f, P.helmet);
+    XSPH(root,  0.44f, hy + 0.42f, -0.08f, 0.05f, 0.12f, 0.06f, P.chest);
+    XBOX(root, 0.0f, hy + 0.02f, 0.27f, 0.42f, 0.06f, 0.05f, GLOW);
+    // thick arms
+    for (int side = -1; side <= 1; side += 2){
+        float rot = side * (0.10f + sway);
+        Mat4 ab = matMul(root, matT(side * 0.54f, 1.56f + breathe*0.5f, 0));
+        Mat4 arm = matMul(ab, matRZ(rot));
+        XSPH(ab, 0.0f, 0.02f, 0.0f, 0.42f, 0.32f, 0.44f, P.chest);
+        // SHOULDER SPIKE
+        XSPH(ab, side * 0.14f, 0.24f, -0.06f, 0.12f, 0.20f, 0.12f, P.belt);
+        XSPH(ab, side * 0.22f, 0.38f, -0.10f, 0.08f, 0.18f, 0.08f, P.chest);
+        XSPH(ab, side * 0.28f, 0.50f, -0.14f, 0.05f, 0.14f, 0.05f, P.belt);
+        XSPH(arm, 0.0f, -0.26f, 0.0f, 0.22f, 0.36f, 0.22f, P.torso);
+        XSPH(arm, 0.0f, -0.48f, 0.02f, 0.20f, 0.14f, 0.22f, P.chest);
+        XSPH(arm, 0.0f, -0.64f, 0.0f, 0.20f, 0.28f, 0.20f, P.torso);
+        XSPH(arm, side * 0.14f, -0.62f, 0.0f, 0.06f, 0.14f, 0.06f, P.belt);
+        XBOX(arm, 0.0f, -0.82f, 0.0f, 0.20f, 0.05f, 0.20f, P.belt);
+        XSPH(arm, 0.0f, -0.92f, 0.0f, 0.19f, 0.18f, 0.19f, SKIN);
+        for (int f = 0; f < 4; f++){
+            float fz = -0.07f + f * 0.047f;
+            XBOX(arm, 0.0f, -1.04f, fz, 0.032f, 0.075f, 0.032f, SKIN);
+            XSPH(arm, 0.0f, -1.09f, fz, 0.032f, 0.032f, 0.032f, SKIN);
+        }
+        XBOX(arm, -side * 0.12f, -0.92f, 0.02f, 0.055f, 0.065f, 0.055f, SKIN);
+        XSPH(arm, -side * 0.14f, -0.98f, 0.02f, 0.055f, 0.055f, 0.055f, SKIN);
+    }
+}
+
+// ================================================================
+//  CHARACTER 5 — SHADOW (ninja with hood, mask, sash, back blades)
+// ================================================================
+static void drawShadow(const Mat4& root, Palette& P, float breathe, float sway){
+    for (int side = -1; side <= 1; side += 2){
+        float sx = side * 0.15f;
+        XSPH(root, sx, 0.62f, 0.0f, 0.20f, 0.40f, 0.20f, P.legs);
+        XBOX(root, sx, 0.52f, 0.0f, 0.22f, 0.04f, 0.22f, P.belt);
+        XSPH(root, sx, 0.38f, 0.02f, 0.18f, 0.13f, 0.18f, P.chest);
+        XBOX(root, sx, 0.24f, 0.0f, 0.21f, 0.04f, 0.21f, P.belt);
+        XSPH(root, sx, 0.22f, 0.0f, 0.18f, 0.30f, 0.18f, P.legs);
+        XBOX(root, sx, 0.08f, 0.02f, 0.20f, 0.14f, 0.26f, BOOT_C);
+        XBOX(root, sx, 0.02f, 0.02f, 0.22f, 0.04f, 0.28f, METAL_C);
+        XSPH(root, sx, 0.06f, 0.14f, 0.18f, 0.11f, 0.11f, BOOT_C);
+    }
+    XSPH(root, 0.0f, 0.92f, 0.0f, 0.56f, 0.22f, 0.32f, P.torso);
+    XBOX(root, 0.0f, 0.94f, 0.0f, 0.54f, 0.06f, 0.32f, P.belt);
+    XSPH(root, 0.0f, 1.14f, 0.0f, 0.50f, 0.28f, 0.30f, P.torso);
+    XSPH(root, 0.0f, 1.42f + breathe*0.5f, 0.0f, 0.58f, 0.38f, 0.34f, P.torso);
+    XSPH(root, 0.0f, 1.44f + breathe*0.5f, 0.16f, 0.42f, 0.26f, 0.10f, P.chest);
+    XBOX(root, 0.0f, 1.44f + breathe*0.5f, 0.22f, 0.36f, 0.03f, 0.02f, GLOW);
+    // SASH — diagonal
+    Mat4 sash = matMul(root, matT(0.0f, 1.30f, 0.16f));
+    sash = matMul(sash, matRZ(-0.5f));
+    XBOX(sash, 0.0f, 0.0f, 0.0f, 0.10f, 0.62f, 0.06f, P.belt);
+    XSPH(root, 0.0f, 1.60f + breathe*0.5f, 0.0f, 0.26f, 0.12f, 0.28f, P.helmet);
+    float hy = 1.94f + breathe;
+    XSPH(root, 0.0f, hy, 0.0f, 0.42f, 0.44f, 0.42f, P.torso);
+    // hood pointed back
+    XSPH(root, 0.0f, hy + 0.06f, -0.02f, 0.48f, 0.50f, 0.46f, P.helmet);
+    XSPH(root, 0.0f, hy + 0.14f, -0.22f, 0.34f, 0.30f, 0.22f, P.helmet);
+    XSPH(root, 0.0f, hy + 0.10f, -0.34f, 0.18f, 0.16f, 0.14f, P.helmet);
+    // FACE MASK
+    XSPH(root, 0.0f, hy - 0.08f, 0.24f, 0.36f, 0.20f, 0.10f, P.belt);
+    XSPH(root, 0.0f, hy - 0.10f, 0.26f, 0.28f, 0.14f, 0.08f, P.helmet);
+    // glowing eyes only
+    XSPH(root, -0.10f, hy + 0.02f, 0.235f, 0.06f, 0.03f, 0.03f, GLOW);
+    XSPH(root,  0.10f, hy + 0.02f, 0.235f, 0.06f, 0.03f, 0.03f, GLOW);
+    for (int side = -1; side <= 1; side += 2){
+        float rot = side * (0.10f + sway);
+        Mat4 ab = matMul(root, matT(side * 0.42f, 1.50f + breathe*0.5f, 0));
+        Mat4 arm = matMul(ab, matRZ(rot));
+        XSPH(ab, 0.0f, 0.02f, 0.0f, 0.28f, 0.22f, 0.32f, P.chest);
+        // BACK BLADE
+        XSPH(ab, 0.0f, 0.14f, -0.14f, 0.06f, 0.18f, 0.05f, P.belt);
+        XSPH(ab, 0.0f, 0.28f, -0.24f, 0.04f, 0.14f, 0.04f, P.chest);
+        XSPH(arm, 0.0f, -0.24f, 0.0f, 0.15f, 0.32f, 0.15f, P.torso);
+        XSPH(arm, 0.0f, -0.44f, 0.0f, 0.13f, 0.11f, 0.15f, P.chest);
+        XSPH(arm, 0.0f, -0.60f, 0.0f, 0.13f, 0.26f, 0.13f, P.torso);
+        XBOX(arm, 0.0f, -0.72f, 0.0f, 0.14f, 0.04f, 0.14f, P.belt);
+        XSPH(arm, 0.0f, -0.82f, 0.0f, 0.13f, 0.14f, 0.13f, P.torso);
+        for (int f = 0; f < 4; f++){
+            float fz = -0.05f + f * 0.034f;
+            XBOX(arm, 0.0f, -0.90f, fz, 0.022f, 0.065f, 0.022f, P.torso);
+        }
+        XBOX(arm, -side * 0.08f, -0.82f, 0.02f, 0.04f, 0.05f, 0.04f, P.torso);
+    }
+}
+
+// ================================================================
+//  PET
+// ================================================================
 static void drawPet(float t){
     if (gPetIdx <= 0) return;
     PetColors& P = gPets[gPetIdx];
     int kind = gPetIdx;
-
     float bob  = sinf(t*2.4f) * 0.04f;
     float sway = sinf(t*1.3f) * 0.22f;
-
-    // Pet has its own yaw + fixed world position next to character
-    Mat4 base = matMul(matT(0.62f, 0.36f + bob, 0.20f),
-                       matRY(gPetYaw + sway));
-
-    drawBox(matMul(base, matS(0.22f, 0.20f, 0.26f)), P.body);
-    drawBox(matMul(base, matMul(matT(0.0f, 0.16f, 0.04f), matS(0.20f, 0.20f, 0.20f))), P.body);
+    Mat4 base = matMul(matT(0.62f, 0.36f + bob, 0.20f), matRY(gPetYaw + sway));
+    drawSphere(matMul(base, matS(0.26f, 0.22f, 0.30f)), P.body);
+    drawSphere(matMul(base, matMul(matT(0.0f, 0.16f, 0.04f), matS(0.22f, 0.22f, 0.22f))), P.body);
     drawBox(matMul(base, matMul(matT(-0.055f, 0.18f, 0.15f), matS(0.04f, 0.04f, 0.04f))), P.eye);
     drawBox(matMul(base, matMul(matT( 0.055f, 0.18f, 0.15f), matS(0.04f, 0.04f, 0.04f))), P.eye);
-
     if (kind == 1){
-        drawBox(matMul(base, matMul(matT(-0.16f, 0.04f, 0.0f), matS(0.09f, 0.16f, 0.22f))), P.accent);
-        drawBox(matMul(base, matMul(matT( 0.16f, 0.04f, 0.0f), matS(0.09f, 0.16f, 0.22f))), P.accent);
-        drawBox(matMul(base, matMul(matT(0.0f, 0.15f, 0.16f), matS(0.06f, 0.05f, 0.08f))), P.accent);
+        drawSphere(matMul(base, matMul(matT(-0.16f, 0.04f, 0.0f), matS(0.10f, 0.18f, 0.24f))), P.accent);
+        drawSphere(matMul(base, matMul(matT( 0.16f, 0.04f, 0.0f), matS(0.10f, 0.18f, 0.24f))), P.accent);
+        drawSphere(matMul(base, matMul(matT(0.0f, 0.15f, 0.16f), matS(0.07f, 0.06f, 0.09f))), P.accent);
     } else if (kind == 2){
-        drawBox(matMul(base, matMul(matT(-0.06f, 0.28f, 0.02f), matS(0.06f, 0.09f, 0.06f))), P.accent);
-        drawBox(matMul(base, matMul(matT( 0.06f, 0.28f, 0.02f), matS(0.06f, 0.09f, 0.06f))), P.accent);
-        drawBox(matMul(base, matMul(matT(0.0f, 0.14f, 0.16f), matS(0.09f, 0.06f, 0.08f))), P.accent);
+        drawSphere(matMul(base, matMul(matT(-0.06f, 0.28f, 0.02f), matS(0.07f, 0.10f, 0.07f))), P.accent);
+        drawSphere(matMul(base, matMul(matT( 0.06f, 0.28f, 0.02f), matS(0.07f, 0.10f, 0.07f))), P.accent);
+        drawSphere(matMul(base, matMul(matT(0.0f, 0.14f, 0.16f), matS(0.10f, 0.07f, 0.09f))), P.accent);
     } else if (kind == 3){
-        drawBox(matMul(base, matMul(matT(-0.18f, 0.08f, -0.02f), matS(0.08f, 0.22f, 0.16f))), P.accent);
-        drawBox(matMul(base, matMul(matT( 0.18f, 0.08f, -0.02f), matS(0.08f, 0.22f, 0.16f))), P.accent);
-        drawBox(matMul(base, matMul(matT(0.0f, 0.02f, -0.18f), matS(0.10f, 0.08f, 0.14f))), P.accent);
+        drawSphere(matMul(base, matMul(matT(-0.18f, 0.08f, -0.02f), matS(0.09f, 0.24f, 0.18f))), P.accent);
+        drawSphere(matMul(base, matMul(matT( 0.18f, 0.08f, -0.02f), matS(0.09f, 0.24f, 0.18f))), P.accent);
+        drawSphere(matMul(base, matMul(matT(0.0f, 0.02f, -0.18f), matS(0.11f, 0.09f, 0.16f))), P.accent);
     } else if (kind == 4){
-        drawBox(matMul(base, matMul(matT(-0.06f, 0.29f, 0.02f), matS(0.06f, 0.10f, 0.06f))), P.accent);
-        drawBox(matMul(base, matMul(matT( 0.06f, 0.29f, 0.02f), matS(0.06f, 0.10f, 0.06f))), P.accent);
-        drawBox(matMul(base, matMul(matT(0.0f, 0.06f, -0.16f), matS(0.05f, 0.16f, 0.05f))), P.accent);
+        drawSphere(matMul(base, matMul(matT(-0.06f, 0.29f, 0.02f), matS(0.07f, 0.11f, 0.07f))), P.accent);
+        drawSphere(matMul(base, matMul(matT( 0.06f, 0.29f, 0.02f), matS(0.07f, 0.11f, 0.07f))), P.accent);
+        drawSphere(matMul(base, matMul(matT(0.0f, 0.06f, -0.16f), matS(0.06f, 0.18f, 0.06f))), P.accent);
     } else if (kind == 5){
-        drawBox(matMul(base, matMul(matT(-0.16f, 0.06f, 0.0f), matS(0.06f, 0.22f, 0.20f))), P.accent);
-        drawBox(matMul(base, matMul(matT( 0.16f, 0.06f, 0.0f), matS(0.06f, 0.22f, 0.20f))), P.accent);
+        drawSphere(matMul(base, matMul(matT(-0.16f, 0.06f, 0.0f), matS(0.07f, 0.24f, 0.22f))), P.accent);
+        drawSphere(matMul(base, matMul(matT( 0.16f, 0.06f, 0.0f), matS(0.07f, 0.24f, 0.22f))), P.accent);
         float glow[3] = {0.35f, 0.95f, 1.00f};
         drawBox(matMul(base, matMul(matT(-0.055f, 0.18f, 0.15f), matS(0.05f, 0.05f, 0.05f))), glow);
         drawBox(matMul(base, matMul(matT( 0.055f, 0.18f, 0.15f), matS(0.05f, 0.05f, 0.05f))), glow);
     }
 }
 
+// ================================================================
+//  RENDER LOOP
+// ================================================================
 static void frame(){
     double now=emscripten_get_now();
     if(gLast==0) gLast=now;
@@ -242,7 +652,6 @@ static void frame(){
     gVP = matMul(proj, view);
 
     drawBoxRGB(matMul(matT(0,-0.08f,0), matS(6.0f,0.15f,6.0f)), 0.10f,0.13f,0.20f);
-
     {
         const int N=32; const float rr=1.9f;
         float spin = t*0.6f;
@@ -256,7 +665,6 @@ static void frame(){
     }
 
     Palette& P = gPalettes[gPaletteIdx];
-    float skin[3] = {1.00f,0.82f,0.62f};
 
     float breathe = sinf(t*1.6f)*0.04f;
     float bob     = sinf(t*1.6f)*0.02f;
@@ -264,37 +672,16 @@ static void frame(){
 
     Mat4 root = matMul(matRY(gCharYaw), matT(0, bob, 0));
 
-    drawBox(matMul(root, matMul(matT(-0.16f,0.40f,0), matS(0.20f,0.80f,0.20f))), P.legs);
-    drawBox(matMul(root, matMul(matT( 0.16f,0.40f,0), matS(0.20f,0.80f,0.20f))), P.legs);
-    float boot[3]={0.05f,0.06f,0.08f};
-    drawBox(matMul(root, matMul(matT(-0.16f,0.06f,0.04f), matS(0.24f,0.14f,0.28f))), boot);
-    drawBox(matMul(root, matMul(matT( 0.16f,0.06f,0.04f), matS(0.24f,0.14f,0.28f))), boot);
+    // ---- dispatch per character ----
+    switch(gPaletteIdx){
+        case 0: drawAlpha (root, P, breathe, sway); break;
+        case 1: drawNova  (root, P, breathe, sway); break;
+        case 2: drawGhost (root, P, breathe, sway); break;
+        case 3: drawBlaze (root, P, breathe, sway); break;
+        case 4: drawShadow(root, P, breathe, sway); break;
+        default: drawAlpha(root, P, breathe, sway); break;
+    }
 
-    drawBox(matMul(root, matMul(matT(0.0f, 1.20f + breathe*0.5f, 0), matS(0.62f + breathe,0.82f,0.34f))), P.torso);
-    drawBox(matMul(root, matMul(matT(0.0f, 1.28f + breathe*0.5f, 0.18f), matS(0.44f,0.30f,0.06f))), P.chest);
-    drawBox(matMul(root, matMul(matT(0.0f, 0.86f, 0.0f), matS(0.64f,0.08f,0.36f))), P.belt);
-
-    drawBox(matMul(root, matMul(matT(0.0f, 1.90f + breathe, 0), matS(0.44f,0.44f,0.44f))), skin);
-    drawBox(matMul(root, matMul(matT(0.0f, 2.06f + breathe, 0), matS(0.52f,0.20f,0.52f))), P.helmet);
-    drawBoxRGB(matMul(root, matMul(matT(0.0f, 1.96f + breathe, 0.24f), matS(0.42f,0.08f,0.06f))), 0.05f,0.85f,1.00f);
-    float eye[3]={0.05f,0.05f,0.09f};
-    drawBox(matMul(root, matMul(matT(-0.10f, 1.88f + breathe, 0.235f), matS(0.08f,0.08f,0.05f))), eye);
-    drawBox(matMul(root, matMul(matT( 0.10f, 1.88f + breathe, 0.235f), matS(0.08f,0.08f,0.05f))), eye);
-
-    float thL = -(0.12f + sway);
-    float thR =  (0.12f + sway);
-    Mat4 armBaseL = matMul(root, matT(-0.46f, 1.44f + breathe*0.5f, 0));
-    Mat4 armBaseR = matMul(root, matT( 0.46f, 1.44f + breathe*0.5f, 0));
-    Mat4 armL = matMul(armBaseL, matRZ(thL));
-    Mat4 armR = matMul(armBaseR, matRZ(thR));
-    drawBox(matMul(armBaseL, matS(0.24f,0.16f,0.30f)), P.chest);
-    drawBox(matMul(armBaseR, matS(0.24f,0.16f,0.30f)), P.chest);
-    drawBox(matMul(armL, matMul(matT(0,-0.34f,0), matS(0.16f,0.68f,0.16f))), P.torso);
-    drawBox(matMul(armR, matMul(matT(0,-0.34f,0), matS(0.16f,0.68f,0.16f))), P.torso);
-    drawBox(matMul(armL, matMul(matT(0,-0.72f,0), matS(0.16f,0.16f,0.16f))), skin);
-    drawBox(matMul(armR, matMul(matT(0,-0.72f,0), matS(0.16f,0.16f,0.16f))), skin);
-
-    // Pet — independent rotation
     drawPet(t);
 }
 
@@ -328,10 +715,8 @@ int main(){
     glGenBuffers(1,&gIBO);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,gIBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(IDX),IDX,GL_STATIC_DRAW);
-    glEnableVertexAttribArray(aPos);
-    glVertexAttribPointer(aPos,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)0);
-    glEnableVertexAttribArray(aNormal);
-    glVertexAttribPointer(aNormal,3,GL_FLOAT,GL_FALSE,6*sizeof(float),(void*)(3*sizeof(float)));
+
+    buildSphere();
 
     emscripten_set_mousedown_callback("#canvas", nullptr, EM_TRUE, on_mouse_down);
     emscripten_set_mouseup_callback  ("#canvas", nullptr, EM_TRUE, on_mouse_up);
