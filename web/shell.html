@@ -476,6 +476,19 @@
       })();
     }
 
+
+    var BAG_ORDER = ['Scout Pack','Tactical Bag','Cyberpack','Elite Carrier','Phantom Pack'];
+    function applyBagTo3D(name){
+      var idx = BAG_ORDER.indexOf(name);
+      if (idx < 0) idx = 0;
+      (function tryApply(){
+        if (window.Module && typeof Module._set_bag_preset === 'function'){
+          Module._set_bag_preset(idx);
+          console.log('[3D] bag ->', name, '(idx', idx, ')');
+        } else { setTimeout(tryApply, 120); }
+      })();
+    }
+
     function fmt(n){ return Number(n).toLocaleString('en-US'); }
     function updateTopbar(){
       var c = document.getElementById('uiCoins');
@@ -570,6 +583,7 @@
               DB.set(cfg.storeKey, item.key || item.name);
               if (id === 'character') applyCharTo3D(item.key);
               if (id === 'pet')       applyPetTo3D(item.name);
+              if (id === 'inventory') applyBagTo3D(item.name);
               renderPanel();
             }
           });
@@ -730,6 +744,7 @@
       refreshBadges();
       applyCharTo3D(DB.get('ba_selected_char','alpha'));
       applyPetTo3D(DB.get('ba_selected_pet','Sky Falcon'));
+      applyBagTo3D(DB.get('ba_selected_bag','Scout Pack'));
       setActiveSubject(0);  // default = character drag
 
       document.querySelectorAll('[data-panel]').forEach(function(btn){
