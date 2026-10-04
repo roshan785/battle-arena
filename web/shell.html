@@ -160,6 +160,41 @@
   .row .rright.claimed{color:#22c55e;opacity:1;font-weight:700}
   .row.empty{opacity:.55;border-style:dashed}
   .row.empty .icon{background:rgba(0,224,255,.08);border:1px dashed rgba(0,224,255,.4)}
+
+  .setting-row{display:flex;justify-content:space-between;align-items:center;
+    padding:14px 2px;border-bottom:1px solid rgba(0,224,255,.08);gap:14px}
+  .setting-row:last-child{border-bottom:none}
+  .setting-label .sname{font-weight:700;font-size:13px;letter-spacing:.3px}
+  .setting-label .ssub{font-size:11px;color:#7fd4ff;letter-spacing:1px;margin-top:3px}
+  .setting-ctrl{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+  .setting-ctrl .value{font-size:12px;color:#9fe8ff;min-width:46px;text-align:right;
+    font-variant-numeric:tabular-nums;font-weight:700}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:160px;height:6px;
+    border-radius:3px;background:linear-gradient(90deg,#00c8ff,#0066cc);outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid #00c8ff;
+    cursor:pointer;box-shadow:0 0 10px rgba(0,224,255,.7)}
+  input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;
+    background:#fff;border:2px solid #00c8ff;cursor:pointer}
+  .toggle-sw{position:relative;display:inline-block;width:48px;height:26px;flex:0 0 auto}
+  .toggle-sw input{opacity:0;width:0;height:0}
+  .toggle-sw .track{position:absolute;inset:0;background:rgba(0,224,255,.15);
+    border:1px solid var(--border);border-radius:13px;transition:.2s;cursor:pointer}
+  .toggle-sw .track::before{content:"";position:absolute;width:18px;height:18px;
+    left:3px;top:3px;background:#9fb0c8;border-radius:50%;transition:.2s}
+  .toggle-sw input:checked + .track{background:linear-gradient(90deg,#00c8ff,#0066cc);border-color:#7ff0ff}
+  .toggle-sw input:checked + .track::before{transform:translateX(22px);background:#fff;
+    box-shadow:0 0 10px rgba(255,255,255,.7)}
+  .setting-btn{width:100%;padding:12px;border:1px solid #ff3b5c;
+    background:rgba(255,59,92,.1);color:#ff8fa3;border-radius:8px;font-weight:700;
+    letter-spacing:1.5px;cursor:pointer;font-family:inherit;text-transform:uppercase;
+    font-size:12px;transition:.15s;margin-top:8px}
+  .setting-btn:hover{background:rgba(255,59,92,.22);border-color:#ff3b5c;color:#fff}
+  #fpsOverlay{position:fixed;top:12px;right:12px;padding:5px 11px;border-radius:6px;
+    background:rgba(0,0,0,.55);color:#7ff0ff;font:700 12px/1.3 ui-monospace,monospace;
+    border:1px solid rgba(0,224,255,.3);display:none;z-index:40;pointer-events:none;
+    letter-spacing:1px}
+
   @media (max-width:720px){
     .middle{grid-template-columns:1fr}
     .menu{max-width:320px}
@@ -273,6 +308,7 @@
   </div>
 
   <div id="hint">Drag to rotate</div>
+  <div id="fpsOverlay">0 FPS</div>
 
   <div class="panel-overlay" id="panelOverlay" hidden>
     <div class="panel" id="panelBox">
@@ -370,6 +406,12 @@
       +'<path d="M10 16 L38 16 L34 42 L14 42 Z" fill="'+c+'"/>'
       +'<path d="M18 16 V12 a6 6 0 0 1 12 0 V16" stroke="'+c+'" stroke-width="3" fill="none"/>'
       +'<rect x="18" y="24" width="12" height="10" rx="2" fill="rgba(255,255,255,.4)"/></svg>'; }
+    function svgNone(){
+      return '<svg viewBox="0 0 48 48">'
+        +'<circle cx="24" cy="24" r="13" fill="none" stroke="#6a7a8c" stroke-width="2" stroke-dasharray="4 3"/>'
+        +'<path d="M16 16 L32 32 M32 16 L16 32" stroke="#7a8a9c" stroke-width="2.4" stroke-linecap="round"/>'
+        +'</svg>';
+    }
     function svgPerson(c){ return '<svg viewBox="0 0 24 24" fill="'+c+'">'
       +'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6z"/></svg>'; }
     function svgMail(c){ return '<svg viewBox="0 0 24 24" fill="'+c+'">'
@@ -380,6 +422,7 @@
       inventory: { title:'Backpacks', sub:'5 / 8 slots used',
         foot:[{label:'Close'}],
         grid: [
+          {name:'None', sub:'Empty slot', color:'#6a7a8c', rar:'common', isNone:true},
           {name:'Scout Pack',   sub:'Common',    color:'#7aa2c9', rar:'common'},
           {name:'Tactical Bag', sub:'Rare',      color:'#3fa9ff', rar:'rare'},
           {name:'Cyberpack',    sub:'Epic',      color:'#a970ff', rar:'epic'},
@@ -390,6 +433,7 @@
       weapons: { title:'Weapons', sub:'Primary loadout',
         foot:[{label:'Close'}],
         grid: [
+          {name:'None', sub:'Unarmed', color:'#6a7a8c', rar:'common', isNone:true},
           {name:'AR-56 Vulcan', sub:'Rare',      color:'#5ec8ff', rar:'rare',      kind:'ar'},
           {name:'MP-9 Viper',   sub:'Rare',      color:'#3fa9ff', rar:'rare',      kind:'smg'},
           {name:'AWM Reaper',   sub:'Epic',      color:'#b085ff', rar:'epic',      kind:'sniper'},
@@ -410,6 +454,7 @@
       pet: { title:'Pets', sub:'Your companions',
         foot:[{label:'Close'}],
         grid: [
+          {name:'None', sub:'No pet', color:'#6a7a8c', rar:'common', isNone:true},
           {name:'Sky Falcon', sub:'Rare',      color:'#5ec8ff', rar:'rare',      kind:'bird'},
           {name:'Frost Wolf', sub:'Epic',      color:'#9fd0ff', rar:'epic',      kind:'wolf'},
           {name:'Ember Drake',sub:'Epic',      color:'#ff7a3d', rar:'epic',      kind:'dragon'},
@@ -428,7 +473,8 @@
         ],
         type:'store', buyable:true },
       team: { title:'Squad', sub:'', foot:[{label:'Close'}], dynamicRows:true },
-      mail: { title:'Mail',  sub:'', foot:[{label:'Close'}], dynamicMail:true }
+      mail: { title:'Mail',  sub:'', foot:[{label:'Close'}], dynamicMail:true },
+      settings: { title:'Settings', sub:'Game preferences', foot:[], settingsPanel:true }
     };
 
     if (DB.get('ba_coins', null)     === null) DB.set('ba_coins', 1250);
@@ -455,6 +501,13 @@
 
     var PET_ORDER = ['Sky Falcon','Frost Wolf','Ember Drake','Lucky Cat','Mech-01'];
     function applyPetTo3D(name){
+      if (name === 'None'){
+        (function tryApply(){
+          if (window.Module && typeof Module._set_pet_preset === 'function') Module._set_pet_preset(0);
+          else setTimeout(tryApply, 120);
+        })();
+        return;
+      }
       var idx = PET_ORDER.indexOf(name);
       if (idx < 0) idx = 0;
       idx += 1;
@@ -479,6 +532,13 @@
 
     var BAG_ORDER = ['Scout Pack','Tactical Bag','Cyberpack','Elite Carrier','Phantom Pack'];
     function applyBagTo3D(name){
+      if (name === 'None'){
+        (function tryApply(){
+          if (window.Module && typeof Module._set_bag_preset === 'function') Module._set_bag_preset(-1);
+          else setTimeout(tryApply, 120);
+        })();
+        return;
+      }
       var idx = BAG_ORDER.indexOf(name);
       if (idx < 0) idx = 0;
       (function tryApply(){
@@ -486,6 +546,26 @@
           Module._set_bag_preset(idx);
           console.log('[3D] bag ->', name, '(idx', idx, ')');
         } else { setTimeout(tryApply, 120); }
+      })();
+    }
+
+
+    var WEAPON_ORDER = ['AR-56 Vulcan','MP-9 Viper','AWM Reaper','SPAS Thunder','Desert Fang'];
+    function applyWeaponTo3D(name){
+      if (name === 'None'){
+        (function tryApply(){
+          if (window.Module && typeof Module._set_gun_preset === 'function') Module._set_gun_preset(-1);
+          else setTimeout(tryApply, 120);
+        })();
+        return;
+      }
+      var idx = WEAPON_ORDER.indexOf(name);
+      if (idx < 0) idx = 0;
+      (function tryApply(){
+        if (window.Module && typeof Module._set_gun_preset === 'function'){
+          Module._set_gun_preset(idx);
+          console.log('[3D] gun ->', name, '(idx', idx, ')');
+        } else setTimeout(tryApply, 120);
       })();
     }
 
@@ -512,7 +592,8 @@
       card.type = 'button';
       card.dataset.key = item.key || item.name;
       var svg = '';
-      if (type === 'bag')            svg = svgBag(item.color);
+      if (item.isNone)               svg = svgNone();
+      else if (type === 'bag')       svg = svgBag(item.color);
       else if (type === 'weapon')    svg = svgWeapon(item.color, item.kind);
       else if (type === 'character') svg = svgChar(item.color);
       else if (type === 'pet')       svg = svgPet(item.color, item.kind);
@@ -551,6 +632,8 @@
       pBody.innerHTML = '';
       pFoot.innerHTML = '';
 
+      if (cfg.settingsPanel){ buildSettingsPanelUI(pBody, pFoot); return; }
+
       if (cfg.grid){
         var grid = document.createElement('div');
         grid.className = 'item-grid';
@@ -584,6 +667,7 @@
               if (id === 'character') applyCharTo3D(item.key);
               if (id === 'pet')       applyPetTo3D(item.name);
               if (id === 'inventory') applyBagTo3D(item.name);
+              if (id === 'weapons')   applyWeaponTo3D(item.name);
               renderPanel();
             }
           });
@@ -688,6 +772,94 @@
       }
     }
 
+
+    function addSlider(parent, name, sub, min, max, step, val, unit, onChange){
+      var row = document.createElement('div');
+      row.className = 'setting-row';
+      var lbl = document.createElement('div');
+      lbl.className = 'setting-label';
+      lbl.innerHTML = '<div class="sname">' + name + '</div><div class="ssub">' + sub + '</div>';
+      var ctrl = document.createElement('div');
+      ctrl.className = 'setting-ctrl';
+      var rng = document.createElement('input');
+      rng.type = 'range'; rng.min = min; rng.max = max; rng.step = step; rng.value = val;
+      var out = document.createElement('span');
+      out.className = 'value';
+      out.textContent = val + (unit || '');
+      rng.addEventListener('input', function(){
+        var v = parseFloat(rng.value);
+        out.textContent = v + (unit || '');
+        onChange(v);
+      });
+      ctrl.appendChild(rng);
+      ctrl.appendChild(out);
+      row.appendChild(lbl);
+      row.appendChild(ctrl);
+      parent.appendChild(row);
+    }
+
+    function addToggle(parent, name, sub, checked, onChange){
+      var row = document.createElement('div');
+      row.className = 'setting-row';
+      var lbl = document.createElement('div');
+      lbl.className = 'setting-label';
+      lbl.innerHTML = '<div class="sname">' + name + '</div><div class="ssub">' + sub + '</div>';
+      var sw = document.createElement('label');
+      sw.className = 'toggle-sw';
+      var inp = document.createElement('input');
+      inp.type = 'checkbox'; inp.checked = !!checked;
+      var tr = document.createElement('span');
+      tr.className = 'track';
+      sw.appendChild(inp);
+      sw.appendChild(tr);
+      inp.addEventListener('change', function(){ onChange(inp.checked); });
+      row.appendChild(lbl);
+      row.appendChild(sw);
+      parent.appendChild(row);
+    }
+
+    function addActionButton(parent, label, onClick){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'setting-btn';
+      b.textContent = label;
+      b.addEventListener('click', onClick);
+      parent.appendChild(b);
+    }
+
+    function buildSettingsPanelUI(body, foot){
+      body.innerHTML = '';
+      foot.innerHTML = '';
+      addSlider(body, 'Camera FOV', 'Field of view', 45, 110, 1, DB.get('ba_fov', 60), '\u00b0', function(v){
+        DB.set('ba_fov', v);
+        if (window.Module && Module._set_camera_fov) Module._set_camera_fov(v);
+      });
+      addSlider(body, 'Drag Sensitivity', 'Turn speed when dragging', 30, 300, 10, DB.get('ba_sens', 100), '%', function(v){
+        DB.set('ba_sens', v);
+        if (window.Module && Module._set_drag_sensitivity) Module._set_drag_sensitivity(v / 100);
+      });
+      addSlider(body, 'Sound Volume', 'Effects volume', 0, 100, 5, DB.get('ba_sound', 80), '%', function(v){
+        DB.set('ba_sound', v);
+      });
+      addSlider(body, 'Music Volume', 'Background music', 0, 100, 5, DB.get('ba_music', 60), '%', function(v){
+        DB.set('ba_music', v);
+      });
+      addToggle(body, 'Auto Rotate', 'Character rotates slowly', DB.get('ba_autorotate', 0) == 1, function(v){
+        DB.set('ba_autorotate', v ? 1 : 0);
+        if (window.Module && Module._set_auto_rotate) Module._set_auto_rotate(v ? 1 : 0);
+      });
+      addToggle(body, 'Show FPS', 'Display FPS counter', DB.get('ba_showfps', 0) == 1, function(v){
+        DB.set('ba_showfps', v ? 1 : 0);
+        var el = document.getElementById('fpsOverlay');
+        if (el) el.style.display = v ? 'block' : 'none';
+      });
+      addActionButton(body, 'Reset All Data', function(){
+        if (!window.confirm('Reset all settings and progress?')) return;
+        try { localStorage.clear(); } catch(e){}
+        location.reload();
+      });
+    }
+
     function refreshBadges(){
       var unread = 3 - Math.min(3, DB.get('ba_mail_claimed', []).length);
       var mb = document.getElementById('badgeMail');
@@ -745,6 +917,7 @@
       applyCharTo3D(DB.get('ba_selected_char','alpha'));
       applyPetTo3D(DB.get('ba_selected_pet','Sky Falcon'));
       applyBagTo3D(DB.get('ba_selected_bag','Scout Pack'));
+      applyWeaponTo3D(DB.get('ba_selected_weapon','AR-56 Vulcan'));
       setActiveSubject(0);  // default = character drag
 
       document.querySelectorAll('[data-panel]').forEach(function(btn){
@@ -752,10 +925,40 @@
           openPanel(btn.getAttribute('data-panel'));
         });
       });
+
+      // FPS counter
+      var fpsFrames = 0, fpsLastTime = performance.now();
+      (function fpsTick(){
+        fpsFrames++;
+        var now = performance.now();
+        if (now - fpsLastTime >= 500){
+          var fps = Math.round(fpsFrames * 1000 / (now - fpsLastTime));
+          var el = document.getElementById('fpsOverlay');
+          if (el) el.textContent = fps + ' FPS';
+          fpsFrames = 0; fpsLastTime = now;
+        }
+        requestAnimationFrame(fpsTick);
+      })();
+      if (DB.get('ba_showfps', 0)){
+        var fe = document.getElementById('fpsOverlay');
+        if (fe) fe.style.display = 'block';
+      }
+
+      // Apply stored settings to C++
+      (function applySettings(){
+        if (!window.Module || typeof Module._set_camera_fov !== 'function'){
+          setTimeout(applySettings, 150);
+          return;
+        }
+        Module._set_camera_fov(DB.get('ba_fov', 60));
+        Module._set_drag_sensitivity(DB.get('ba_sens', 100) / 100);
+        Module._set_auto_rotate(DB.get('ba_autorotate', 0));
+      })();
+
       var playBtn = document.getElementById('btnPlay');
       if (playBtn) playBtn.addEventListener('click', function(){ console.log('PLAY'); });
       var setBtn = document.getElementById('btnSettings');
-      if (setBtn) setBtn.addEventListener('click', function(){ console.log('SETTINGS'); });
+      if (setBtn) setBtn.addEventListener('click', function(){ openPanel('settings'); });
     });
   </script>
   {{{ SCRIPT }}}

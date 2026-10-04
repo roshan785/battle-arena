@@ -113,6 +113,10 @@ static PetColors gPets[6] = {
 };
 static int gPetIdx = 1;
 static int gBagIdx = 0;
+static int gGunIdx = -1;
+static float gFOV = 60.0f;
+static int   gAutoRotate = 0;
+static float gDragSens = 1.0f;
 static int gActiveSubject = 0;
 
 extern "C" EMSCRIPTEN_KEEPALIVE
@@ -120,7 +124,15 @@ void set_character_preset(int idx){ if(idx<0)idx=0; if(idx>4)idx=4; gPaletteIdx=
 extern "C" EMSCRIPTEN_KEEPALIVE
 void set_pet_preset(int idx){ if(idx<0)idx=0; if(idx>5)idx=5; gPetIdx=idx; }
 extern "C" EMSCRIPTEN_KEEPALIVE
-void set_bag_preset(int idx){ if(idx<0)idx=0; if(idx>4)idx=4; gBagIdx=idx; }
+void set_bag_preset(int idx){ if(idx<-1)idx=-1; if(idx>4)idx=4; gBagIdx=idx; }
+extern "C" EMSCRIPTEN_KEEPALIVE
+void set_gun_preset(int idx){ if(idx<-1)idx=-1; if(idx>4)idx=4; gGunIdx=idx; }
+extern "C" EMSCRIPTEN_KEEPALIVE
+void set_camera_fov(float deg){ if(deg<30)deg=30; if(deg>120)deg=120; gFOV=deg; }
+extern "C" EMSCRIPTEN_KEEPALIVE
+void set_drag_sensitivity(float s){ if(s<0.2f)s=0.2f; if(s>4.0f)s=4.0f; gDragSens=s; }
+extern "C" EMSCRIPTEN_KEEPALIVE
+void set_auto_rotate(int on){ gAutoRotate = on ? 1 : 0; }
 extern "C" EMSCRIPTEN_KEEPALIVE
 void set_active_subject(int s){ gActiveSubject = (s==1) ? 1 : 0; }
 
@@ -138,7 +150,7 @@ static EM_BOOL on_mouse_move(int, const EmscriptenMouseEvent* e, void*){
     if(!gDragging) return EM_TRUE;
     double dx = e->clientX - gLastX;
     gLastX = e->clientX;
-    float delta = -(float)dx * 0.010f;
+    float delta = -(float)dx * 0.010f * gDragSens;
     if (gActiveSubject == 0) gCharYaw += delta;
     else                     gPetYaw  += delta;
     return EM_TRUE;
@@ -152,7 +164,7 @@ static EM_BOOL on_touch_move(int, const EmscriptenTouchEvent* e, void*){
     if (!gDragging || e->numTouches < 1) return EM_TRUE;
     double dx = e->touches[0].clientX - gLastX;
     gLastX = e->touches[0].clientX;
-    float delta = -(float)dx * 0.012f;
+    float delta = -(float)dx * 0.012f * gDragSens;
     if (gActiveSubject == 0) gCharYaw += delta;
     else                     gPetYaw  += delta;
     return EM_TRUE;
@@ -309,7 +321,15 @@ static void drawAlpha(const Mat4& root, Palette& P, float breathe, float sway){
     for (int side = -1; side <= 1; side += 2){
         float rot = side * (0.12f + sway);
         Mat4 ab = matMul(root, matT(side * 0.46f, 1.48f + breathe*0.5f, 0));
-        Mat4 arm = matMul(ab, matRZ(rot));
+        Mat4 arm;
+        if (gGunIdx >= 0){
+            float fwd = (side > 0) ? -1.00f : -1.12f;
+            float inw = -side * 0.28f;
+            arm = matMul(ab, matRZ(inw));
+            arm = matMul(arm, matRX(fwd));
+        } else {
+            arm = matMul(ab, matRZ(rot));
+        }
         XSPH(ab, 0.0f, 0.02f, 0.0f, 0.34f, 0.26f, 0.36f, P.chest);
         XSPH(arm, 0.0f, -0.24f, 0.0f, 0.18f, 0.34f, 0.18f, P.torso);
         XSPH(arm, 0.0f, -0.44f, 0.02f, 0.16f, 0.12f, 0.18f, P.chest);
@@ -384,7 +404,15 @@ static void drawNova(const Mat4& root, Palette& P, float breathe, float sway){
     for (int side = -1; side <= 1; side += 2){
         float rot = side * (0.12f + sway);
         Mat4 ab = matMul(root, matT(side * 0.44f, 1.48f + breathe*0.5f, 0));
-        Mat4 arm = matMul(ab, matRZ(rot));
+        Mat4 arm;
+        if (gGunIdx >= 0){
+            float fwd = (side > 0) ? -1.00f : -1.12f;
+            float inw = -side * 0.28f;
+            arm = matMul(ab, matRZ(inw));
+            arm = matMul(arm, matRX(fwd));
+        } else {
+            arm = matMul(ab, matRZ(rot));
+        }
         XSPH(ab, 0.0f, 0.02f, 0.0f, 0.28f, 0.22f, 0.30f, P.chest);
         XSPH(arm, 0.0f, -0.24f, 0.0f, 0.15f, 0.34f, 0.15f, P.torso);
         XSPH(arm, 0.0f, -0.44f, 0.02f, 0.13f, 0.11f, 0.15f, P.chest);
@@ -441,7 +469,15 @@ static void drawGhost(const Mat4& root, Palette& P, float breathe, float sway){
     for (int side = -1; side <= 1; side += 2){
         float rot = side * (0.10f + sway);
         Mat4 ab = matMul(root, matT(side * 0.42f, 1.55f + breathe*0.5f, 0));
-        Mat4 arm = matMul(ab, matRZ(rot));
+        Mat4 arm;
+        if (gGunIdx >= 0){
+            float fwd = (side > 0) ? -1.00f : -1.12f;
+            float inw = -side * 0.28f;
+            arm = matMul(ab, matRZ(inw));
+            arm = matMul(arm, matRX(fwd));
+        } else {
+            arm = matMul(ab, matRZ(rot));
+        }
         XSPH(ab, 0.0f, 0.0f, 0.0f, 0.30f, 0.24f, 0.32f, P.chest);
         XSPH(arm, 0.0f, -0.24f, 0.0f, 0.14f, 0.32f, 0.14f, P.torso);
         XSPH(arm, 0.0f, -0.44f, 0.0f, 0.13f, 0.11f, 0.14f, P.helmet);
@@ -510,7 +546,15 @@ static void drawBlaze(const Mat4& root, Palette& P, float breathe, float sway){
     for (int side = -1; side <= 1; side += 2){
         float rot = side * (0.10f + sway);
         Mat4 ab = matMul(root, matT(side * 0.54f, 1.56f + breathe*0.5f, 0));
-        Mat4 arm = matMul(ab, matRZ(rot));
+        Mat4 arm;
+        if (gGunIdx >= 0){
+            float fwd = (side > 0) ? -1.00f : -1.12f;
+            float inw = -side * 0.28f;
+            arm = matMul(ab, matRZ(inw));
+            arm = matMul(arm, matRX(fwd));
+        } else {
+            arm = matMul(ab, matRZ(rot));
+        }
         XSPH(ab, 0.0f, 0.02f, 0.0f, 0.42f, 0.32f, 0.44f, P.chest);
         // SHOULDER SPIKE
         XSPH(ab, side * 0.14f, 0.24f, -0.06f, 0.12f, 0.20f, 0.12f, P.belt);
@@ -573,7 +617,15 @@ static void drawShadow(const Mat4& root, Palette& P, float breathe, float sway){
     for (int side = -1; side <= 1; side += 2){
         float rot = side * (0.10f + sway);
         Mat4 ab = matMul(root, matT(side * 0.42f, 1.50f + breathe*0.5f, 0));
-        Mat4 arm = matMul(ab, matRZ(rot));
+        Mat4 arm;
+        if (gGunIdx >= 0){
+            float fwd = (side > 0) ? -1.00f : -1.12f;
+            float inw = -side * 0.28f;
+            arm = matMul(ab, matRZ(inw));
+            arm = matMul(arm, matRX(fwd));
+        } else {
+            arm = matMul(ab, matRZ(rot));
+        }
         XSPH(ab, 0.0f, 0.02f, 0.0f, 0.28f, 0.22f, 0.32f, P.chest);
         // BACK BLADE
         XSPH(ab, 0.0f, 0.14f, -0.14f, 0.06f, 0.18f, 0.05f, P.belt);
@@ -607,63 +659,267 @@ static BagColors gBags[5] = {
     {{1.00f,0.35f,0.62f},{0.80f,0.15f,0.42f},{0.30f,0.05f,0.16f}}
 };
 
+
 static void drawBackpack(const Mat4& root){
+    if (gBagIdx < 0) return;
     BagColors& B = gBags[gBagIdx];
-    Mat4 bagRoot = matMul(root, matT(0.0f, 1.38f, -0.28f));
+    Mat4 R = matMul(root, matT(0.0f, 1.38f, -0.30f));
 
     if (gBagIdx == 0){
-        XBOX(bagRoot, 0.0f, 0.0f, 0.0f, 0.42f, 0.50f, 0.18f, B.main);
-        XBOX(bagRoot, 0.0f, -0.06f, -0.10f, 0.28f, 0.22f, 0.05f, B.accent);
-        XBOX(bagRoot, -0.19f, 0.10f, 0.14f, 0.07f, 0.50f, 0.06f, B.strap);
-        XBOX(bagRoot,  0.19f, 0.10f, 0.14f, 0.07f, 0.50f, 0.06f, B.strap);
+        // ============ SCOUT PACK (compact tactical) ============
+        XBOX(R, 0.0f,  0.00f, -0.12f, 0.44f, 0.50f, 0.20f, B.main);
+        // chamfer strips (cut edges)
+        XBOX(R, 0.0f,  0.24f, -0.12f, 0.36f, 0.04f, 0.20f, B.accent);
+        XBOX(R, 0.0f, -0.24f, -0.12f, 0.36f, 0.04f, 0.20f, B.accent);
+        XBOX(R, -0.20f, 0.00f, -0.12f, 0.04f, 0.42f, 0.20f, B.accent);
+        XBOX(R,  0.20f, 0.00f, -0.12f, 0.04f, 0.42f, 0.20f, B.accent);
+        // angled front flap
+        Mat4 flap = matMul(R, matT(0.0f, 0.06f, -0.23f));
+        flap = matMul(flap, matRX(0.20f));
+        XBOX(flap, 0.0f, 0.0f, 0.0f, 0.38f, 0.20f, 0.04f, B.accent);
+        // angled top lid
+        Mat4 lid = matMul(R, matT(0.0f, 0.27f, -0.10f));
+        lid = matMul(lid, matRX(-0.25f));
+        XBOX(lid, 0.0f, 0.0f, 0.0f, 0.42f, 0.05f, 0.22f, B.accent);
+        // buckle
+        XBOX(R, 0.0f, -0.06f, -0.26f, 0.06f, 0.07f, 0.03f, B.strap);
+        XBOX(R, 0.0f, -0.02f, -0.26f, 0.10f, 0.025f, 0.03f, B.strap);
+        // top carry handle
+        XBOX(R, 0.0f, 0.34f, -0.08f, 0.14f, 0.05f, 0.06f, B.strap);
+        XSPH(R, -0.06f, 0.32f, -0.08f, 0.05f, 0.06f, 0.06f, B.accent);
+        XSPH(R,  0.06f, 0.32f, -0.08f, 0.05f, 0.06f, 0.06f, B.accent);
+        // side pockets
+        XBOX(R, -0.25f, -0.04f, -0.12f, 0.05f, 0.22f, 0.16f, B.accent);
+        XBOX(R,  0.25f, -0.04f, -0.12f, 0.05f, 0.22f, 0.16f, B.accent);
+        XBOX(R, -0.26f, -0.12f, -0.12f, 0.02f, 0.04f, 0.16f, B.strap);
+        XBOX(R,  0.26f, -0.12f, -0.12f, 0.02f, 0.04f, 0.16f, B.strap);
+        // molle straps (3 horizontal thin)
+        for (int i = 0; i < 3; i++){
+            XBOX(R, 0.0f, -0.14f + i*0.11f, -0.23f, 0.34f, 0.014f, 0.012f, B.strap);
+        }
+        // shoulder straps
+        XBOX(R, -0.21f, 0.16f, 0.10f, 0.06f, 0.56f, 0.05f, B.strap);
+        XBOX(R,  0.21f, 0.16f, 0.10f, 0.06f, 0.56f, 0.05f, B.strap);
     }
+
     else if (gBagIdx == 1){
-        XBOX(bagRoot, 0.0f, 0.0f, 0.0f, 0.50f, 0.56f, 0.20f, B.main);
-        XBOX(bagRoot, 0.0f, -0.10f, -0.11f, 0.32f, 0.26f, 0.05f, B.accent);
-        XBOX(bagRoot, -0.28f, -0.08f, 0.0f, 0.10f, 0.24f, 0.16f, B.accent);
-        XBOX(bagRoot,  0.28f, -0.08f, 0.0f, 0.10f, 0.24f, 0.16f, B.accent);
-        XBOX(bagRoot, 0.0f, 0.28f, 0.0f, 0.34f, 0.06f, 0.16f, B.accent);
-        XBOX(bagRoot, -0.22f, 0.12f, 0.15f, 0.08f, 0.56f, 0.07f, B.strap);
-        XBOX(bagRoot,  0.22f, 0.12f, 0.15f, 0.08f, 0.56f, 0.07f, B.strap);
+        // ============ TACTICAL BAG (bigger, layered) ============
+        XBOX(R, 0.0f, -0.14f, -0.12f, 0.52f, 0.22f, 0.22f, B.main);  // bottom (wide)
+        XBOX(R, 0.0f,  0.06f, -0.12f, 0.48f, 0.22f, 0.22f, B.main);  // mid
+        XBOX(R, 0.0f,  0.24f, -0.12f, 0.42f, 0.18f, 0.22f, B.main);  // top (narrow)
+        // bevel rings between layers
+        XBOX(R, 0.0f, -0.02f, -0.12f, 0.50f, 0.02f, 0.24f, B.accent);
+        XBOX(R, 0.0f,  0.16f, -0.12f, 0.46f, 0.02f, 0.24f, B.accent);
+        // angled top lid
+        Mat4 lid = matMul(R, matT(0.0f, 0.34f, -0.12f));
+        lid = matMul(lid, matRX(-0.35f));
+        XBOX(lid, 0.0f, 0.0f, 0.0f, 0.40f, 0.06f, 0.22f, B.accent);
+        // front grid panel
+        XBOX(R, 0.0f, -0.06f, -0.25f, 0.34f, 0.36f, 0.04f, B.accent);
+        for (int i = 0; i < 4; i++)
+            XBOX(R, 0.0f, -0.20f + i*0.09f, -0.27f, 0.30f, 0.008f, 0.008f, B.strap);
+        for (int i = 0; i < 3; i++)
+            XBOX(R, -0.12f + i*0.12f, -0.06f, -0.27f, 0.008f, 0.34f, 0.008f, B.strap);
+        // central big buckle
+        XBOX(R, 0.0f, 0.0f, -0.27f, 0.10f, 0.10f, 0.03f, B.strap);
+        XSPH(R, 0.0f, 0.0f, -0.29f, 0.06f, 0.06f, 0.02f, B.main);
+        // top handle (thick)
+        XBOX(R, 0.0f, 0.40f, -0.08f, 0.18f, 0.06f, 0.08f, B.strap);
+        XSPH(R, -0.09f, 0.38f, -0.08f, 0.05f, 0.06f, 0.06f, B.accent);
+        XSPH(R,  0.09f, 0.38f, -0.08f, 0.05f, 0.06f, 0.06f, B.accent);
+        // side mesh pouches
+        for (int sd = -1; sd <= 1; sd += 2){
+            XBOX(R, sd * 0.29f, -0.06f, -0.12f, 0.06f, 0.30f, 0.20f, B.accent);
+            for (int i = 0; i < 4; i++)
+                XBOX(R, sd * 0.32f, -0.16f + i*0.08f, -0.12f, 0.01f, 0.05f, 0.16f, B.strap);
+        }
+        // X cross straps on back
+        Mat4 xs = matMul(R, matT(0.0f, 0.0f, -0.03f));
+        XBOX(matMul(xs, matRZ( 0.7f)), 0.0f, 0.0f, 0.0f, 0.10f, 0.55f, 0.03f, B.strap);
+        XBOX(matMul(xs, matRZ(-0.7f)), 0.0f, 0.0f, 0.0f, 0.10f, 0.55f, 0.03f, B.strap);
+        // shoulder harness
+        XBOX(R, -0.24f, 0.18f, 0.12f, 0.07f, 0.60f, 0.06f, B.strap);
+        XBOX(R,  0.24f, 0.18f, 0.12f, 0.07f, 0.60f, 0.06f, B.strap);
     }
+
     else if (gBagIdx == 2){
-        XBOX(bagRoot, 0.0f, 0.0f, 0.0f, 0.46f, 0.58f, 0.22f, B.main);
-        XBOX(bagRoot, 0.0f, -0.12f, -0.13f, 0.34f, 0.30f, 0.06f, B.accent);
-        float cy[3] = {0.05f, 0.85f, 1.00f};
-        XBOX(bagRoot, 0.0f, 0.22f, -0.13f, 0.36f, 0.03f, 0.03f, cy);
-        XBOX(bagRoot, 0.0f, 0.14f, -0.13f, 0.36f, 0.03f, 0.03f, cy);
-        XBOX(bagRoot, 0.0f, -0.28f, 0.0f, 0.40f, 0.06f, 0.20f, B.accent);
-        XBOX(bagRoot, 0.20f, 0.36f, 0.0f, 0.04f, 0.16f, 0.04f, B.accent);
-        XSPH(bagRoot, 0.20f, 0.46f, 0.0f, 0.06f, 0.06f, 0.06f, cy);
-        XBOX(bagRoot, -0.22f, 0.14f, 0.15f, 0.08f, 0.58f, 0.07f, B.strap);
-        XBOX(bagRoot,  0.22f, 0.14f, 0.15f, 0.08f, 0.58f, 0.07f, B.strap);
+        // ============ CYBERPACK (angular, futuristic) ============
+        float cy[3] = {0.05f, 0.90f, 1.00f};
+        XBOX(R, 0.0f, 0.0f, -0.12f, 0.44f, 0.56f, 0.22f, B.main);
+        // angled top cut
+        Mat4 topc = matMul(R, matT(0.0f, 0.28f, -0.12f));
+        topc = matMul(topc, matRX(-0.5f));
+        XBOX(topc, 0.0f, 0.0f, 0.0f, 0.42f, 0.08f, 0.22f, B.accent);
+        // angled bottom cut
+        Mat4 botc = matMul(R, matT(0.0f, -0.28f, -0.12f));
+        botc = matMul(botc, matRX(0.5f));
+        XBOX(botc, 0.0f, 0.0f, 0.0f, 0.42f, 0.08f, 0.22f, B.accent);
+        // carbon fiber stripes (front)
+        for (int i = 0; i < 5; i++)
+            XBOX(R, 0.0f, -0.20f + i*0.10f, -0.23f, 0.36f, 0.008f, 0.008f, B.strap);
+        // glowing vertical spine
+        XBOX(R, 0.0f, 0.0f, -0.24f, 0.05f, 0.48f, 0.02f, cy);
+        XSPH(R, 0.0f, -0.20f, -0.25f, 0.04f, 0.04f, 0.03f, cy);
+        XSPH(R, 0.0f,  0.20f, -0.25f, 0.04f, 0.04f, 0.03f, cy);
+        // side angular panels
+        XBOX(R, -0.24f, 0.0f, -0.12f, 0.06f, 0.34f, 0.20f, B.accent);
+        XBOX(R,  0.24f, 0.0f, -0.12f, 0.06f, 0.34f, 0.20f, B.accent);
+        // LED indicators (left side)
+        for (int i = 0; i < 3; i++)
+            XBOX(R, -0.27f, -0.12f + i*0.10f, -0.12f, 0.01f, 0.03f, 0.05f, cy);
+        // antenna
+        XBOX(R, 0.16f, 0.34f, -0.06f, 0.025f, 0.20f, 0.025f, B.accent);
+        XSPH(R, 0.16f, 0.46f, -0.06f, 0.04f, 0.04f, 0.04f, cy);
+        // top handle
+        XBOX(R, 0.0f, 0.36f, -0.10f, 0.16f, 0.04f, 0.06f, B.strap);
+        // harness
+        XBOX(R, -0.22f, 0.16f, 0.10f, 0.06f, 0.58f, 0.05f, B.strap);
+        XBOX(R,  0.22f, 0.16f, 0.10f, 0.06f, 0.58f, 0.05f, B.strap);
     }
+
     else if (gBagIdx == 3){
-        XBOX(bagRoot, 0.0f, 0.0f, 0.0f, 0.54f, 0.68f, 0.24f, B.main);
-        XBOX(bagRoot, 0.0f, -0.14f, -0.14f, 0.40f, 0.30f, 0.06f, B.accent);
-        XBOX(bagRoot, 0.0f, 0.24f, -0.14f, 0.40f, 0.14f, 0.06f, B.accent);
-        XBOX(bagRoot, -0.32f, -0.04f, 0.0f, 0.10f, 0.32f, 0.20f, B.accent);
-        XBOX(bagRoot,  0.32f, -0.04f, 0.0f, 0.10f, 0.32f, 0.20f, B.accent);
-        XSPH(bagRoot, 0.0f, 0.40f, 0.0f, 0.34f, 0.14f, 0.20f, B.accent);
-        float bk[3] = {0.20f, 0.16f, 0.06f};
-        XBOX(bagRoot, -0.14f, 0.10f, -0.14f, 0.05f, 0.05f, 0.03f, bk);
-        XBOX(bagRoot,  0.14f, 0.10f, -0.14f, 0.05f, 0.05f, 0.03f, bk);
-        XBOX(bagRoot, -0.22f, 0.18f, 0.15f, 0.09f, 0.66f, 0.08f, B.strap);
-        XBOX(bagRoot,  0.22f, 0.18f, 0.15f, 0.09f, 0.66f, 0.08f, B.strap);
+        // ============ ELITE CARRIER (large military) ============
+        XBOX(R, 0.0f, -0.16f, -0.14f, 0.56f, 0.26f, 0.24f, B.main);  // base
+        XBOX(R, 0.0f,  0.08f, -0.14f, 0.52f, 0.24f, 0.24f, B.main);  // mid
+        XBOX(R, 0.0f,  0.28f, -0.14f, 0.44f, 0.20f, 0.22f, B.main);  // top
+        // bevel rings
+        XBOX(R, 0.0f, -0.03f, -0.14f, 0.54f, 0.02f, 0.26f, B.accent);
+        XBOX(R, 0.0f,  0.20f, -0.14f, 0.48f, 0.02f, 0.25f, B.accent);
+        // rolled top (rounded cylinder)
+        XSPH(R, 0.0f, 0.40f, -0.12f, 0.48f, 0.12f, 0.22f, B.accent);
+        XBOX(R, 0.0f, 0.44f, -0.12f, 0.36f, 0.06f, 0.20f, B.main);
+        // big central buckle
+        XBOX(R, 0.0f, 0.08f, -0.27f, 0.12f, 0.12f, 0.04f, B.strap);
+        XSPH(R, 0.0f, 0.08f, -0.29f, 0.07f, 0.07f, 0.025f, B.main);
+        XBOX(R, 0.0f, -0.16f, -0.27f, 0.16f, 0.05f, 0.03f, B.strap);
+        XBOX(R, 0.0f,  0.28f, -0.24f, 0.14f, 0.04f, 0.03f, B.strap);
+        // side pouches + radio (right)
+        for (int sd = -1; sd <= 1; sd += 2){
+            XBOX(R, sd * 0.31f, -0.20f, -0.10f, 0.06f, 0.22f, 0.20f, B.accent);
+            XBOX(R, sd * 0.33f, -0.28f, -0.10f, 0.02f, 0.04f, 0.18f, B.strap);
+            if (sd > 0){
+                XBOX(R, sd * 0.32f, 0.14f, -0.06f, 0.05f, 0.24f, 0.10f, B.accent);
+                XBOX(R, sd * 0.34f, 0.34f, -0.06f, 0.02f, 0.20f, 0.02f, B.strap);
+                XSPH(R, sd * 0.34f, 0.46f, -0.06f, 0.03f, 0.03f, 0.03f, B.accent);
+            }
+        }
+        // bottom reinforcement
+        XBOX(R, 0.0f, -0.30f, -0.14f, 0.56f, 0.04f, 0.24f, B.strap);
+        // thick harness
+        XBOX(R, -0.26f, 0.14f, 0.12f, 0.08f, 0.62f, 0.07f, B.strap);
+        XBOX(R,  0.26f, 0.14f, 0.12f, 0.08f, 0.62f, 0.07f, B.strap);
+        // sternum strap
+        XBOX(R, 0.0f, -0.06f, 0.18f, 0.50f, 0.04f, 0.03f, B.strap);
+    }
+
+    else {
+        // ============ PHANTOM PACK (sleek, futuristic) ============
+        float pv[3] = {1.00f, 0.55f, 0.85f};
+        XBOX(R, 0.0f, 0.0f, -0.14f, 0.42f, 0.62f, 0.20f, B.main);
+        // angled top
+        Mat4 topc = matMul(R, matT(0.0f, 0.32f, -0.14f));
+        topc = matMul(topc, matRX(-0.45f));
+        XBOX(topc, 0.0f, 0.0f, 0.0f, 0.40f, 0.10f, 0.20f, B.accent);
+        // angled bottom
+        Mat4 botc = matMul(R, matT(0.0f, -0.32f, -0.14f));
+        botc = matMul(botc, matRX(0.45f));
+        XBOX(botc, 0.0f, 0.0f, 0.0f, 0.40f, 0.10f, 0.20f, B.accent);
+        // glowing central spine
+        XBOX(R, 0.0f, 0.0f, -0.25f, 0.04f, 0.54f, 0.02f, pv);
+        // horizontal accent lines
+        for (int i = 0; i < 3; i++)
+            XBOX(R, 0.0f, -0.16f + i*0.16f, -0.24f, 0.34f, 0.008f, 0.008f, B.accent);
+        // angled side fins
+        Mat4 finR = matMul(R, matT(0.22f, 0.06f, -0.14f));
+        finR = matMul(finR, matRZ(-0.35f));
+        XBOX(finR, 0.0f, 0.0f, 0.0f, 0.03f, 0.42f, 0.16f, B.accent);
+        Mat4 finL = matMul(R, matT(-0.22f, 0.06f, -0.14f));
+        finL = matMul(finL, matRZ(0.35f));
+        XBOX(finL, 0.0f, 0.0f, 0.0f, 0.03f, 0.42f, 0.16f, B.accent);
+        // antenna pair
+        XBOX(R, -0.10f, 0.40f, -0.10f, 0.02f, 0.16f, 0.02f, B.accent);
+        XBOX(R,  0.10f, 0.40f, -0.10f, 0.02f, 0.16f, 0.02f, B.accent);
+        XSPH(R, -0.10f, 0.50f, -0.10f, 0.03f, 0.03f, 0.03f, pv);
+        XSPH(R,  0.10f, 0.50f, -0.10f, 0.03f, 0.03f, 0.03f, pv);
+        // slim harness
+        XBOX(R, -0.20f, 0.14f, 0.10f, 0.06f, 0.60f, 0.05f, B.strap);
+        XBOX(R,  0.20f, 0.14f, 0.10f, 0.06f, 0.60f, 0.05f, B.strap);
+        XSPH(R, -0.20f, -0.14f, 0.12f, 0.04f, 0.04f, 0.04f, pv);
+        XSPH(R,  0.20f, -0.14f, 0.12f, 0.04f, 0.04f, 0.04f, pv);
+    }
+}
+
+
+// ================================================================
+//  GUN — held in right hand
+// ================================================================
+static void drawGun(const Mat4& root, float breathe, float sway){
+    if (gGunIdx < 0) return;
+    // Gun held in front of chest, both hands supporting
+    Mat4 G = matMul(root, matT(0.10f, 1.16f + breathe*0.35f, 0.55f));
+    G = matMul(G, matRX(-0.08f));
+
+    float body[3], accent[3], dark[3];
+    if (gGunIdx == 0){        body[0]=0.37f;body[1]=0.78f;body[2]=1.00f;
+                              accent[0]=0.20f;accent[1]=0.55f;accent[2]=0.85f;
+                              dark[0]=0.10f;dark[1]=0.15f;dark[2]=0.22f; }
+    else if (gGunIdx == 1){   body[0]=0.25f;body[1]=0.66f;body[2]=1.00f;
+                              accent[0]=0.10f;accent[1]=0.42f;accent[2]=0.75f;
+                              dark[0]=0.10f;dark[1]=0.15f;dark[2]=0.22f; }
+    else if (gGunIdx == 2){   body[0]=0.69f;body[1]=0.52f;body[2]=1.00f;
+                              accent[0]=0.42f;accent[1]=0.22f;accent[2]=0.80f;
+                              dark[0]=0.16f;dark[1]=0.10f;dark[2]=0.28f; }
+    else if (gGunIdx == 3){   body[0]=0.66f;body[1]=0.44f;body[2]=1.00f;
+                              accent[0]=0.42f;accent[1]=0.22f;accent[2]=0.80f;
+                              dark[0]=0.16f;dark[1]=0.10f;dark[2]=0.28f; }
+    else {                    body[0]=1.00f;body[1]=0.78f;body[2]=0.34f;
+                              accent[0]=0.85f;accent[1]=0.55f;accent[2]=0.15f;
+                              dark[0]=0.30f;dark[1]=0.20f;dark[2]=0.06f; }
+
+    if (gGunIdx == 0){
+        XBOX(G, 0.0f,  0.00f,  0.20f, 0.09f, 0.11f, 0.52f, body);
+        XBOX(G, 0.0f, -0.02f, -0.10f, 0.08f, 0.10f, 0.14f, dark);
+        XBOX(G, 0.0f, -0.12f,  0.10f, 0.07f, 0.16f, 0.10f, dark);
+        XBOX(G, 0.0f, -0.05f,  0.02f, 0.07f, 0.09f, 0.10f, dark);
+        XBOX(G, 0.0f,  0.00f, -0.20f, 0.07f, 0.11f, 0.16f, dark);
+        XBOX(G, 0.0f,  0.01f,  0.55f, 0.045f, 0.045f, 0.28f, accent);
+        XBOX(G, 0.0f,  0.11f,  0.20f, 0.055f, 0.055f, 0.16f, accent);
+        XBOX(G, 0.0f,  0.07f,  0.55f, 0.06f, 0.04f, 0.10f, dark);
+        XBOX(G, 0.0f, -0.06f,  0.30f, 0.06f, 0.10f, 0.08f, dark);
+    }
+    else if (gGunIdx == 1){
+        XBOX(G, 0.0f,  0.00f,  0.14f, 0.09f, 0.11f, 0.34f, body);
+        XBOX(G, 0.0f, -0.15f,  0.12f, 0.06f, 0.18f, 0.08f, dark);
+        XBOX(G, 0.0f, -0.06f,  0.00f, 0.07f, 0.09f, 0.09f, dark);
+        XBOX(G, 0.0f,  0.00f, -0.12f, 0.07f, 0.09f, 0.09f, dark);
+        XBOX(G, 0.0f,  0.01f,  0.42f, 0.045f, 0.045f, 0.18f, accent);
+        XBOX(G, 0.0f,  0.09f,  0.10f, 0.045f, 0.045f, 0.12f, accent);
+        XBOX(G, 0.0f, -0.04f,  0.24f, 0.06f, 0.08f, 0.08f, dark);
+    }
+    else if (gGunIdx == 2){
+        XBOX(G, 0.0f,  0.00f,  0.22f, 0.07f, 0.11f, 0.58f, body);
+        XBOX(G, 0.0f, -0.05f,  0.00f, 0.06f, 0.08f, 0.12f, dark);
+        XBOX(G, 0.0f,  0.00f, -0.22f, 0.07f, 0.11f, 0.22f, dark);
+        XBOX(G, 0.0f,  0.02f,  0.75f, 0.035f, 0.035f, 0.42f, accent);
+        XBOX(G, 0.0f,  0.14f,  0.20f, 0.055f, 0.08f, 0.22f, accent);
+        XBOX(G, 0.0f,  0.12f,  0.10f, 0.055f, 0.055f, 0.07f, dark);
+        XBOX(G, 0.0f, -0.11f,  0.10f, 0.055f, 0.11f, 0.09f, dark);
+        XBOX(G, 0.0f,  0.00f,  0.50f, 0.055f, 0.06f, 0.14f, dark);
+    }
+    else if (gGunIdx == 3){
+        XBOX(G, 0.0f,  0.00f,  0.18f, 0.10f, 0.11f, 0.44f, body);
+        XBOX(G, 0.0f,  0.05f,  0.55f, 0.055f, 0.055f, 0.30f, accent);
+        XBOX(G, 0.0f, -0.05f,  0.55f, 0.055f, 0.055f, 0.30f, accent);
+        XBOX(G, 0.0f,  0.00f, -0.06f, 0.09f, 0.09f, 0.16f, dark);
+        XBOX(G, 0.0f, -0.05f,  0.00f, 0.07f, 0.09f, 0.11f, dark);
+        XBOX(G, 0.0f,  0.00f, -0.22f, 0.07f, 0.11f, 0.18f, dark);
+        XBOX(G, 0.0f, -0.02f,  0.28f, 0.055f, 0.07f, 0.15f, dark);
     }
     else {
-        XBOX(bagRoot, 0.0f, 0.0f, 0.0f, 0.44f, 0.60f, 0.20f, B.main);
-        XBOX(bagRoot, 0.0f, -0.10f, -0.12f, 0.32f, 0.28f, 0.05f, B.accent);
-        float pv[3] = {1.00f, 0.55f, 0.80f};
-        XBOX(bagRoot, 0.0f, 0.20f, -0.12f, 0.30f, 0.04f, 0.03f, pv);
-        XBOX(bagRoot, -0.28f, 0.04f, 0.0f, 0.08f, 0.26f, 0.14f, B.accent);
-        XBOX(bagRoot,  0.28f, 0.04f, 0.0f, 0.08f, 0.26f, 0.14f, B.accent);
-        XSPH(bagRoot, -0.28f, 0.20f, 0.0f, 0.06f, 0.14f, 0.06f, B.accent);
-        XSPH(bagRoot,  0.28f, 0.20f, 0.0f, 0.06f, 0.14f, 0.06f, B.accent);
-        XBOX(bagRoot, -0.12f, 0.38f, 0.0f, 0.03f, 0.20f, 0.03f, B.accent);
-        XBOX(bagRoot,  0.12f, 0.38f, 0.0f, 0.03f, 0.20f, 0.03f, B.accent);
-        XBOX(bagRoot, -0.22f, 0.14f, 0.15f, 0.08f, 0.58f, 0.07f, B.strap);
-        XBOX(bagRoot,  0.22f, 0.14f, 0.15f, 0.08f, 0.58f, 0.07f, B.strap);
+        XBOX(G, 0.0f,  0.00f,  0.10f, 0.07f, 0.11f, 0.26f, body);
+        XBOX(G, 0.0f, -0.09f, -0.03f, 0.055f, 0.15f, 0.08f, dark);
+        XBOX(G, 0.0f,  0.01f,  0.30f, 0.035f, 0.035f, 0.12f, accent);
+        XBOX(G, 0.0f,  0.07f,  0.08f, 0.045f, 0.035f, 0.07f, accent);
     }
 }
 
@@ -723,7 +979,7 @@ static void frame(){
     float asp=(float)w/(float)h;
     float camX = 1.6f, camY = 2.2f, camZ = 5.4f;
     if (asp < 0.8f){ camX *= 1.2f; camY = 2.6f; camZ = 7.0f; }
-    Mat4 proj = matPersp(45.0f*3.14159265f/180.0f, asp, 0.1f, 100.0f);
+    Mat4 proj = matPersp(gFOV*3.14159265f/180.0f, asp, 0.1f, 100.0f);
     Mat4 view = matLookAt(camX, camY, camZ, 0.0f, 1.15f, 0.0f);
     gVP = matMul(proj, view);
 
@@ -742,10 +998,16 @@ static void frame(){
 
     Palette& P = gPalettes[gPaletteIdx];
 
-    float breathe = sinf(t*1.6f)*0.04f;
-    float bob     = sinf(t*1.6f)*0.02f;
-    float sway    = sinf(t*1.2f)*0.05f;
+    // Natural breathing (~4.5s cycle), body lags behind
+    float bP = t * 1.35f;
+    float breathe = sinf(bP) * 0.055f;
+    float bob     = sinf(bP + 0.55f) * 0.014f;
+    float sway    = sinf(t * 0.85f) * 0.042f;
 
+    if (gAutoRotate){
+        float dt = 0.016f;
+        gCharYaw += 0.35f * dt;
+    }
     Mat4 root = matMul(matRY(gCharYaw), matT(0, bob, 0));
 
     // ---- dispatch per character ----
@@ -759,6 +1021,7 @@ static void frame(){
     }
 
     drawBackpack(root);
+    drawGun(root, breathe, sway);
     drawPet(t);
 }
 
