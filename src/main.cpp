@@ -323,10 +323,9 @@ static void drawAlpha(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.46f, 1.48f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float inw = -side * 0.55f;
-            float fwd = -1.32f;
-            arm = matMul(ab, matRZ(inw));
-            arm = matMul(arm, matRX(fwd));
+            float yaw = -side * 0.55f;
+            float pitch = -1.32f;
+            arm = matMul(ab, matMul(matRY(yaw), matRX(pitch)));
         } else {
             arm = matMul(ab, matRZ(rot));
         }
@@ -406,10 +405,9 @@ static void drawNova(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.44f, 1.48f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float inw = -side * 0.55f;
-            float fwd = -1.32f;
-            arm = matMul(ab, matRZ(inw));
-            arm = matMul(arm, matRX(fwd));
+            float yaw = -side * 0.55f;
+            float pitch = -1.32f;
+            arm = matMul(ab, matMul(matRY(yaw), matRX(pitch)));
         } else {
             arm = matMul(ab, matRZ(rot));
         }
@@ -471,10 +469,9 @@ static void drawGhost(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.42f, 1.55f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float inw = -side * 0.55f;
-            float fwd = -1.32f;
-            arm = matMul(ab, matRZ(inw));
-            arm = matMul(arm, matRX(fwd));
+            float yaw = -side * 0.55f;
+            float pitch = -1.32f;
+            arm = matMul(ab, matMul(matRY(yaw), matRX(pitch)));
         } else {
             arm = matMul(ab, matRZ(rot));
         }
@@ -548,10 +545,9 @@ static void drawBlaze(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.54f, 1.56f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float inw = -side * 0.55f;
-            float fwd = -1.32f;
-            arm = matMul(ab, matRZ(inw));
-            arm = matMul(arm, matRX(fwd));
+            float yaw = -side * 0.55f;
+            float pitch = -1.32f;
+            arm = matMul(ab, matMul(matRY(yaw), matRX(pitch)));
         } else {
             arm = matMul(ab, matRZ(rot));
         }
@@ -619,10 +615,9 @@ static void drawShadow(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.42f, 1.50f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float inw = -side * 0.55f;
-            float fwd = -1.32f;
-            arm = matMul(ab, matRZ(inw));
-            arm = matMul(arm, matRX(fwd));
+            float yaw = -side * 0.55f;
+            float pitch = -1.32f;
+            arm = matMul(ab, matMul(matRY(yaw), matRX(pitch)));
         } else {
             arm = matMul(ab, matRZ(rot));
         }
@@ -856,7 +851,7 @@ static void drawBackpack(const Mat4& root){
 static void drawGun(const Mat4& root, float breathe, float sway){
     if (gGunIdx < 0) return;
     // Gun centered between the two hands (both hands contact it)
-    Mat4 G = matMul(root, matT(0.00f, 1.30f, 0.68f));
+    Mat4 G = matMul(root, matT(0.00f, 1.41f, 0.68f));
 
     float body[3], accent[3], dark[3], metal[3];
     if (gGunIdx == 0){        body[0]=0.37f;body[1]=0.78f;body[2]=1.00f;
