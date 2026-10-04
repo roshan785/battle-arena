@@ -323,8 +323,8 @@ static void drawAlpha(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.46f, 1.48f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float fwd = (side > 0) ? -1.00f : -1.12f;
-            float inw = -side * 0.28f;
+            float inw = (side > 0) ? -0.85f : 0.80f;
+            float fwd = (side > 0) ? -0.82f : -1.00f;
             arm = matMul(ab, matRZ(inw));
             arm = matMul(arm, matRX(fwd));
         } else {
@@ -406,8 +406,8 @@ static void drawNova(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.44f, 1.48f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float fwd = (side > 0) ? -1.00f : -1.12f;
-            float inw = -side * 0.28f;
+            float inw = (side > 0) ? -0.85f : 0.80f;
+            float fwd = (side > 0) ? -0.82f : -1.00f;
             arm = matMul(ab, matRZ(inw));
             arm = matMul(arm, matRX(fwd));
         } else {
@@ -471,8 +471,8 @@ static void drawGhost(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.42f, 1.55f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float fwd = (side > 0) ? -1.00f : -1.12f;
-            float inw = -side * 0.28f;
+            float inw = (side > 0) ? -0.85f : 0.80f;
+            float fwd = (side > 0) ? -0.82f : -1.00f;
             arm = matMul(ab, matRZ(inw));
             arm = matMul(arm, matRX(fwd));
         } else {
@@ -548,8 +548,8 @@ static void drawBlaze(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.54f, 1.56f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float fwd = (side > 0) ? -1.00f : -1.12f;
-            float inw = -side * 0.28f;
+            float inw = (side > 0) ? -0.85f : 0.80f;
+            float fwd = (side > 0) ? -0.82f : -1.00f;
             arm = matMul(ab, matRZ(inw));
             arm = matMul(arm, matRX(fwd));
         } else {
@@ -619,8 +619,8 @@ static void drawShadow(const Mat4& root, Palette& P, float breathe, float sway){
         Mat4 ab = matMul(root, matT(side * 0.42f, 1.50f + breathe*0.5f, 0));
         Mat4 arm;
         if (gGunIdx >= 0){
-            float fwd = (side > 0) ? -1.00f : -1.12f;
-            float inw = -side * 0.28f;
+            float inw = (side > 0) ? -0.85f : 0.80f;
+            float fwd = (side > 0) ? -0.82f : -1.00f;
             arm = matMul(ab, matRZ(inw));
             arm = matMul(arm, matRX(fwd));
         } else {
@@ -855,11 +855,12 @@ static void drawBackpack(const Mat4& root){
 // ================================================================
 static void drawGun(const Mat4& root, float breathe, float sway){
     if (gGunIdx < 0) return;
-    // Gun held in front of chest, both hands supporting
-    Mat4 G = matMul(root, matT(0.10f, 1.16f + breathe*0.35f, 0.55f));
-    G = matMul(G, matRX(-0.08f));
+    // Gun centered between the two hands (both hands contact it)
+    Mat4 G = matMul(root, matT(0.00f, 1.14f, 0.60f));
+    // tiny forward tilt (barrel points slightly up)
+    G = matMul(G, matRX(-0.03f));
 
-    float body[3], accent[3], dark[3];
+    float body[3], accent[3], dark[3], metal[3];
     if (gGunIdx == 0){        body[0]=0.37f;body[1]=0.78f;body[2]=1.00f;
                               accent[0]=0.20f;accent[1]=0.55f;accent[2]=0.85f;
                               dark[0]=0.10f;dark[1]=0.15f;dark[2]=0.22f; }
@@ -875,51 +876,59 @@ static void drawGun(const Mat4& root, float breathe, float sway){
     else {                    body[0]=1.00f;body[1]=0.78f;body[2]=0.34f;
                               accent[0]=0.85f;accent[1]=0.55f;accent[2]=0.15f;
                               dark[0]=0.30f;dark[1]=0.20f;dark[2]=0.06f; }
+    metal[0]=0.16f; metal[1]=0.20f; metal[2]=0.26f;
+
+    // ---- shared grip + foregrip (both hands touch these) ----
+    XBOX(G,  0.00f, -0.13f, -0.02f, 0.09f, 0.20f, 0.11f, dark);   // pistol grip (right hand)
+    XBOX(G,  0.00f, -0.14f,  0.06f, 0.11f, 0.05f, 0.06f, metal);  // grip base
 
     if (gGunIdx == 0){
-        XBOX(G, 0.0f,  0.00f,  0.20f, 0.09f, 0.11f, 0.52f, body);
-        XBOX(G, 0.0f, -0.02f, -0.10f, 0.08f, 0.10f, 0.14f, dark);
-        XBOX(G, 0.0f, -0.12f,  0.10f, 0.07f, 0.16f, 0.10f, dark);
-        XBOX(G, 0.0f, -0.05f,  0.02f, 0.07f, 0.09f, 0.10f, dark);
-        XBOX(G, 0.0f,  0.00f, -0.20f, 0.07f, 0.11f, 0.16f, dark);
-        XBOX(G, 0.0f,  0.01f,  0.55f, 0.045f, 0.045f, 0.28f, accent);
-        XBOX(G, 0.0f,  0.11f,  0.20f, 0.055f, 0.055f, 0.16f, accent);
-        XBOX(G, 0.0f,  0.07f,  0.55f, 0.06f, 0.04f, 0.10f, dark);
-        XBOX(G, 0.0f, -0.06f,  0.30f, 0.06f, 0.10f, 0.08f, dark);
+        // AR-56 rifle — right hand on grip, left hand on foregrip
+        XBOX(G, 0.0f,  0.00f,  0.22f, 0.09f, 0.11f, 0.52f, body);       // body
+        XBOX(G, 0.0f,  0.00f, -0.20f, 0.08f, 0.11f, 0.16f, dark);       // stock
+        XBOX(G, 0.0f,  0.00f,  0.55f, 0.045f, 0.045f, 0.28f, accent);   // barrel
+        XBOX(G, 0.0f,  0.10f,  0.20f, 0.055f, 0.055f, 0.16f, accent);   // top rail
+        XBOX(G, 0.0f,  0.06f,  0.55f, 0.06f, 0.04f, 0.10f, dark);       // muzzle brake
+        XBOX(G, 0.0f, -0.05f,  0.22f, 0.07f, 0.12f, 0.10f, dark);       // magwell
+        XBOX(G, 0.0f, -0.10f,  0.22f, 0.06f, 0.16f, 0.08f, metal);      // magazine
+        XBOX(G, 0.0f, -0.05f,  0.40f, 0.06f, 0.10f, 0.09f, dark);       // foregrip (left hand)
     }
     else if (gGunIdx == 1){
-        XBOX(G, 0.0f,  0.00f,  0.14f, 0.09f, 0.11f, 0.34f, body);
-        XBOX(G, 0.0f, -0.15f,  0.12f, 0.06f, 0.18f, 0.08f, dark);
-        XBOX(G, 0.0f, -0.06f,  0.00f, 0.07f, 0.09f, 0.09f, dark);
-        XBOX(G, 0.0f,  0.00f, -0.12f, 0.07f, 0.09f, 0.09f, dark);
+        // MP-9 SMG — compact
+        XBOX(G, 0.0f,  0.00f,  0.16f, 0.09f, 0.11f, 0.36f, body);
+        XBOX(G, 0.0f,  0.00f, -0.10f, 0.07f, 0.09f, 0.09f, dark);
         XBOX(G, 0.0f,  0.01f,  0.42f, 0.045f, 0.045f, 0.18f, accent);
         XBOX(G, 0.0f,  0.09f,  0.10f, 0.045f, 0.045f, 0.12f, accent);
-        XBOX(G, 0.0f, -0.04f,  0.24f, 0.06f, 0.08f, 0.08f, dark);
+        XBOX(G, 0.0f, -0.11f,  0.14f, 0.055f, 0.16f, 0.07f, metal);     // long mag
+        XBOX(G, 0.0f, -0.05f,  0.30f, 0.06f, 0.09f, 0.08f, dark);       // foregrip
     }
     else if (gGunIdx == 2){
-        XBOX(G, 0.0f,  0.00f,  0.22f, 0.07f, 0.11f, 0.58f, body);
-        XBOX(G, 0.0f, -0.05f,  0.00f, 0.06f, 0.08f, 0.12f, dark);
+        // AWM sniper — long
+        XBOX(G, 0.0f,  0.00f,  0.26f, 0.07f, 0.11f, 0.58f, body);
         XBOX(G, 0.0f,  0.00f, -0.22f, 0.07f, 0.11f, 0.22f, dark);
-        XBOX(G, 0.0f,  0.02f,  0.75f, 0.035f, 0.035f, 0.42f, accent);
-        XBOX(G, 0.0f,  0.14f,  0.20f, 0.055f, 0.08f, 0.22f, accent);
+        XBOX(G, 0.0f,  0.02f,  0.78f, 0.035f, 0.035f, 0.42f, accent);
+        XBOX(G, 0.0f,  0.14f,  0.20f, 0.055f, 0.08f, 0.22f, accent);    // scope
         XBOX(G, 0.0f,  0.12f,  0.10f, 0.055f, 0.055f, 0.07f, dark);
         XBOX(G, 0.0f, -0.11f,  0.10f, 0.055f, 0.11f, 0.09f, dark);
         XBOX(G, 0.0f,  0.00f,  0.50f, 0.055f, 0.06f, 0.14f, dark);
+        XBOX(G, 0.0f, -0.05f,  0.42f, 0.06f, 0.10f, 0.09f, dark);       // foregrip
     }
     else if (gGunIdx == 3){
+        // SPAS shotgun — double barrel
         XBOX(G, 0.0f,  0.00f,  0.18f, 0.10f, 0.11f, 0.44f, body);
         XBOX(G, 0.0f,  0.05f,  0.55f, 0.055f, 0.055f, 0.30f, accent);
         XBOX(G, 0.0f, -0.05f,  0.55f, 0.055f, 0.055f, 0.30f, accent);
         XBOX(G, 0.0f,  0.00f, -0.06f, 0.09f, 0.09f, 0.16f, dark);
         XBOX(G, 0.0f, -0.05f,  0.00f, 0.07f, 0.09f, 0.11f, dark);
         XBOX(G, 0.0f,  0.00f, -0.22f, 0.07f, 0.11f, 0.18f, dark);
-        XBOX(G, 0.0f, -0.02f,  0.28f, 0.055f, 0.07f, 0.15f, dark);
+        XBOX(G, 0.0f, -0.02f,  0.30f, 0.06f, 0.09f, 0.08f, dark);       // pump/foregrip
     }
     else {
-        XBOX(G, 0.0f,  0.00f,  0.10f, 0.07f, 0.11f, 0.26f, body);
-        XBOX(G, 0.0f, -0.09f, -0.03f, 0.055f, 0.15f, 0.08f, dark);
-        XBOX(G, 0.0f,  0.01f,  0.30f, 0.035f, 0.035f, 0.12f, accent);
+        // Desert Fang pistol — one-handed but grip still aligned
+        XBOX(G, 0.0f,  0.00f,  0.12f, 0.07f, 0.11f, 0.26f, body);
+        XBOX(G, 0.0f,  0.01f,  0.32f, 0.035f, 0.035f, 0.12f, accent);
         XBOX(G, 0.0f,  0.07f,  0.08f, 0.045f, 0.035f, 0.07f, accent);
+        XBOX(G, 0.0f, -0.04f,  0.00f, 0.06f, 0.06f, 0.06f, metal);
     }
 }
 
@@ -1000,9 +1009,9 @@ static void frame(){
 
     // Natural breathing (~4.5s cycle), body lags behind
     float bP = t * 1.35f;
-    float breathe = sinf(bP) * 0.055f;
-    float bob     = sinf(bP + 0.55f) * 0.014f;
-    float sway    = sinf(t * 0.85f) * 0.042f;
+    float breathe = sinf(bP) * 0.028f;
+    float bob     = sinf(bP + 0.55f) * 0.008f;
+    float sway    = sinf(t * 0.85f) * 0.026f;
 
     if (gAutoRotate){
         float dt = 0.016f;
